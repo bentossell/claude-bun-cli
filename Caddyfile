@@ -1,0 +1,9 @@
+openode.ai {
+    reverse_proxy localhost:3000
+    
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket localhost:3000
+}
