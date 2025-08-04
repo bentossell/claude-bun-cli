@@ -1,10 +1,11 @@
-import { ClaudeSession, type ClaudeEvent } from "./claude";
+import { ClaudeSDKSession } from "./claude";
+import { mkdirSync } from "fs";
 
 type ClientFrame =
   | { type: "prompt"; session: string; workspace: string; text: string }
   | { type: "cancel"; session: string };
 
-const sessions = new Map<string, ClaudeSession>();
+const sessions = new Map<string, ClaudeSDKSession>();
 
 Bun.serve({
   port: 3000,
@@ -29,27 +30,88 @@ Bun.serve({
   },
   websocket: {
     async message(ws, data) {
+      console.log("Received WebSocket message:", data);
       const frame = JSON.parse(data as string);
 
       /* --- PROMPT --- */
       if (frame.type === "prompt") {
         const { session, workspace, text } = frame;
+        console.log(`Processing prompt: "${text}" for session ${session}`);
+        
+        // Create workspace directory
+        mkdirSync(`./sandbox/${workspace}`, { recursive: true });
+        
         let s = sessions.get(session);
         if (!s) {
-          s = new ClaudeSession(session, workspace);
+          s = new ClaudeSDKSession(session, workspace);
           sessions.set(session, s);
-
-          // Stream events → client
-          (async () => {
-            for await (const evt of s!.stream()) ws.send(JSON.stringify(evt));
-          })();
         }
-        s.write(text);
+
+        // Stream events → client
+        (async () => {
+          try {
+            console.log("Starting stream for prompt:", text);
+            for await (const msg of s!.stream(text)) {
+              console.log("Received SDK message:", msg.type);
+              // Convert SDK messages to simplified format for client
+              if (msg.type === "assistant" && msg.message.content) {
+                for (const content of msg.message.content) {
+                  if (content.type === "text") {
+                    const message = JSON.stringify({ 
+                      type: "assistant_text_delta", 
+                      text: content.text 
+                    });
+                    console.log("Sending to client:", message);
+                    ws.send(message);
+                  } else if (content.type === "tool_use") {
+                    ws.send(JSON.stringify({ 
+                      type: "tool_call", 
+                      tool: { 
+                        name: content.name, 
+                        args: content.input 
+                      } 
+                    }));
+                  }
+                }
+              } else if (msg.type === "user" && msg.message.content) {
+                // Tool results
+                for (const content of msg.message.content) {
+                  if (content.type === "tool_result") {
+                    ws.send(JSON.stringify({ 
+                      type: "tool_result", 
+                      tool: { 
+                        name: content.tool_use_id,
+                        result: content 
+                      } 
+                    }));
+                  }
+                }
+              } else if (msg.type === "result") {
+                ws.send(JSON.stringify({ 
+                  type: "done",
+                  result: msg.subtype === "success" ? msg.result : "Error",
+                  usage: msg.usage
+                }));
+              } else if (msg.type === "system") {
+                ws.send(JSON.stringify({ 
+                  type: "system",
+                  info: msg
+                }));
+              }
+            }
+          } catch (error) {
+            console.error("Stream error:", error);
+            ws.send(JSON.stringify({ 
+              type: "error", 
+              message: error instanceof Error ? error.message : "Unknown error" 
+            }));
+          }
+        })();
       }
 
       /* --- CANCEL --- */
       if (frame.type === "cancel") {
-        sessions.get(frame.session)?.kill();
+        sessions.get(frame.session)?.abort();
         sessions.delete(frame.session);
       }
     },
