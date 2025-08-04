@@ -7,7 +7,8 @@ const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}/chat`);
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}/chat`);
   
   ws.addEventListener("open", () => {
     addMessage("Connected to server", "system");

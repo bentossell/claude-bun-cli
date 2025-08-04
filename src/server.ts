@@ -6,8 +6,13 @@ type ClientFrame =
 
 const sessions = new Map<string, ClaudeSession>();
 
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || "localhost";
+const DOMAIN = process.env.DOMAIN || `${HOST}:${PORT}`;
+
 Bun.serve({
-  port: 3000,
+  port: PORT,
+  hostname: HOST,
   async fetch(req, server) {
     const url = new URL(req.url);
     
@@ -57,4 +62,4 @@ Bun.serve({
   }
 });
 
-console.log("🚀 http://localhost:3000");
+console.log(`🚀 Server running on http://${HOST}:${PORT}`);
