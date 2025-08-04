@@ -62,4 +62,4 @@ Bun.serve({
   }
 });
 
-console.log(`🚀 Server running on http://${HOST}:${PORT}`);
+console.log(`🚀 Server running on ${process.env.DOMAIN ? `https://${DOMAIN}` : `http://${HOST}:${PORT}`}`);
