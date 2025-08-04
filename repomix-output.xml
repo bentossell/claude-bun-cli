@@ -1,0 +1,370 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+public/
+  app.js
+  index.html
+src/
+  claude.ts
+  server.ts
+.gitignore
+index.ts
+package.json
+README.md
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="public/app.js">
+const log = document.getElementById("log");
+const input = document.getElementById("msg");
+
+let ws;
+const session = crypto.randomUUID();
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/chat`);
+  
+  ws.addEventListener("open", () => {
+    append("[Connected to server]\n");
+    input.disabled = false;
+  });
+
+  ws.addEventListener("message", e => {
+    const m = JSON.parse(e.data);
+    if (m.type === "assistant_text_delta") append(m.text);
+    if (m.type === "thinking_delta")       append("[thinking…]\n");
+    if (m.type === "tool_call")            append(`[${m.tool.name} → ${JSON.stringify(m.tool.args)}]\n`);
+    if (m.type === "tool_result")          append(`[result ⇐ ${truncate(m.tool.result?.output)}]\n`);
+  });
+
+  ws.addEventListener("close", () => {
+    append("[Connection closed]\n");
+    input.disabled = true;
+  });
+
+  ws.addEventListener("error", (e) => {
+    append("[Connection error - retrying...]\n");
+    setTimeout(connect, 1000);
+  });
+}
+
+input.addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const text = input.value.trim(); input.value = "";
+  if (!text) return;
+  if (ws.readyState !== WebSocket.OPEN) {
+    append("Not connected. Please wait...\n");
+    return;
+  }
+  append(`You: ${text}\n`);
+  ws.send(JSON.stringify({ type:"prompt", session, workspace:"demo", text }));
+});
+
+function append(t){ log.textContent += t; log.scrollTop = log.scrollHeight; }
+const truncate = s => typeof s==="string"&&s.length>160 ? s.slice(0,160)+"…" : s;
+
+// Start connection
+input.disabled = true;
+connect();
+</file>
+
+<file path="public/index.html">
+<!doctype html><meta charset=utf-8>
+<title>Claude Code (Bun · WS)</title>
+<style>
+#log{border:1px solid #ccc;height:65vh;overflow:auto;white-space:pre-wrap;padding:.5rem}
+input{width:100%;padding:.5rem;margin-top:.5rem}
+</style>
+<h1>Claude Code via CLI</h1>
+<div id=log></div>
+<input id=msg placeholder="Ask Claude… (Enter to send)">
+<script type=module src="app.js"></script>
+</file>
+
+<file path="src/claude.ts">
+import { spawn } from "bun";
+import { mkdirSync } from "fs";
+import type { ReadableStream } from "node:stream/web";
+import { setTimeout } from "timers/promises";
+
+// -- CLI constants --
+const CLAUDE_BIN =
+  Bun.resolveSync?.("@anthropic-ai/claude-code/cli.js", import.meta.dir) ??
+  "claude";
+
+export interface ClaudeEvent {
+  type: string;        // thinking_delta | tool_call | tool_result | assistant_text_delta | done …
+  [k: string]: any;
+}
+
+export class ClaudeSession {
+  private proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+  private reader: ReadableStreamDefaultReader<string>;
+
+  constructor(
+    public id: string,
+    public workspace: string
+  ) {
+    mkdirSync(`./sandbox/${workspace}`, { recursive: true });
+
+    this.proc = spawn([
+      CLAUDE_BIN, 
+      "--output-format", "stream-json",
+      "--dangerously-skip-permissions",
+      "--model", "claude-3-5-sonnet-20241022"
+    ], {
+      cwd: `./sandbox/${workspace}`,
+      stderr: "inherit",
+      stdout: "pipe",
+      stdin: "pipe",
+      env: { ...process.env, COLUMNS: "120", LINES: "40" }
+    });
+
+    if (this.proc.exitCode !== null) {
+      console.error("⚠️  Claude CLI failed", this.proc.exitCode);
+    }
+
+    this.reader = this.proc.stdout.getReader();
+  }
+
+  /** Send a user prompt or tool-level command */
+  write(line: string) {
+    this.proc.stdin.write(new TextEncoder().encode(line + "\n"));
+  }
+
+  /** Async generator that yields parsed CLI JSON lines */
+  async *stream(): AsyncGenerator<ClaudeEvent> {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await this.reader.read();
+      if (done) break;
+      buffer += decoder.decode(value);
+      let nl;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        try { yield JSON.parse(line); }
+        catch { /* ignore non-JSON noise */ }
+      }
+    }
+  }
+
+  kill() { this.proc.kill(); }
+}
+</file>
+
+<file path="src/server.ts">
+import { ClaudeSession, type ClaudeEvent } from "./claude";
+
+type ClientFrame =
+  | { type: "prompt"; session: string; workspace: string; text: string }
+  | { type: "cancel"; session: string };
+
+const sessions = new Map<string, ClaudeSession>();
+
+Bun.serve({
+  port: 3000,
+  async fetch(req, server) {
+    const url = new URL(req.url);
+    
+    /* ---- static ---- */
+    if (url.pathname === "/" || url.pathname === "/index.html")
+      return new Response(Bun.file("public/index.html"));
+    if (url.pathname === "/app.js")
+      return new Response(Bun.file("public/app.js"), { headers: { "content-type":"text/javascript" }});
+
+    /* ---- WS upgrade ---- */
+    if (url.pathname === "/chat") {
+      if (server.upgrade(req)) {
+        return; // connection upgraded
+      }
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
+    return new Response("404", { status: 404 });
+  },
+  websocket: {
+    async message(ws, data) {
+      const frame = JSON.parse(data as string);
+
+      /* --- PROMPT --- */
+      if (frame.type === "prompt") {
+        const { session, workspace, text } = frame;
+        let s = sessions.get(session);
+        if (!s) {
+          s = new ClaudeSession(session, workspace);
+          sessions.set(session, s);
+
+          // Stream events → client
+          (async () => {
+            for await (const evt of s!.stream()) ws.send(JSON.stringify(evt));
+          })();
+        }
+        s.write(text);
+      }
+
+      /* --- CANCEL --- */
+      if (frame.type === "cancel") {
+        sessions.get(frame.session)?.kill();
+        sessions.delete(frame.session);
+      }
+    },
+    close(ws) { /* optional cleanup */ }
+  }
+});
+
+console.log("🚀 http://localhost:3000");
+</file>
+
+<file path=".gitignore">
+# dependencies (bun install)
+node_modules
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+_.log
+report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store
+</file>
+
+<file path="index.ts">
+console.log("Hello via Bun!");
+</file>
+
+<file path="package.json">
+{
+  "name": "claude-bun-cli",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.67",
+    "ms": "^2.1.3"
+  }
+}
+</file>
+
+<file path="README.md">
+# claude-bun-cli
+
+To install dependencies:
+
+```bash
+bun install
+```
+
+To run:
+
+```bash
+bun run index.ts
+```
+
+This project was created using `bun init` in bun v1.2.4. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    // Enable latest features
+    "lib": ["ESNext", "DOM"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "allowJs": true,
+
+    // Bundler mode
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    // Best practices
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Some stricter flags (disabled by default)
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noPropertyAccessFromIndexSignature": false
+  }
+}
+</file>
+
+</files>

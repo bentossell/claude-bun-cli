@@ -1,0 +1,16 @@
+{
+  "name": "claude-bun-cli",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^1.0.67",
+    "ms": "^2.1.3"
+  }
+}
