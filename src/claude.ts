@@ -17,7 +17,7 @@ export class ClaudeSDKSession {
       abortController: this.abortController,
       options: {
         cwd: `./sandbox/${this.workspace}`,
-        permissionMode: "default",
+        permissionMode: "bypassPermissions",
         model: "sonnet",
         allowedTools: ["*"],
         stderr: (data) => console.error("Claude stderr:", data)

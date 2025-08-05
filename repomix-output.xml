@@ -40,223 +40,295 @@ The content is organized as follows:
 </file_summary>
 
 <directory_structure>
+.claude/
+  settings.local.json
+.github/
+  workflows/
+    claude-code-review.yml
+    claude.yml
 public/
   app.js
   index.html
 src/
   claude.ts
+  persistence.ts
   server.ts
 .gitignore
+Caddyfile
+CLAUDE.md
+deploy.sh
+ecosystem.config.js
 index.ts
 package.json
+plan-future.md
+quick-setup.sh
 README.md
+setup-server.sh
+start.sh
 tsconfig.json
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
 
-<file path="public/app.js">
-const log = document.getElementById("log");
-const input = document.getElementById("msg");
-
-let ws;
-const session = crypto.randomUUID();
-
-function connect() {
-  ws = new WebSocket(`ws://${location.host}/chat`);
-  
-  ws.addEventListener("open", () => {
-    append("[Connected to server]\n");
-    input.disabled = false;
-  });
-
-  ws.addEventListener("message", e => {
-    const m = JSON.parse(e.data);
-    if (m.type === "assistant_text_delta") append(m.text);
-    if (m.type === "thinking_delta")       append("[thinking…]\n");
-    if (m.type === "tool_call")            append(`[${m.tool.name} → ${JSON.stringify(m.tool.args)}]\n`);
-    if (m.type === "tool_result")          append(`[result ⇐ ${truncate(m.tool.result?.output)}]\n`);
-  });
-
-  ws.addEventListener("close", () => {
-    append("[Connection closed]\n");
-    input.disabled = true;
-  });
-
-  ws.addEventListener("error", (e) => {
-    append("[Connection error - retrying...]\n");
-    setTimeout(connect, 1000);
-  });
-}
-
-input.addEventListener("keydown", e => {
-  if (e.key !== "Enter") return;
-  const text = input.value.trim(); input.value = "";
-  if (!text) return;
-  if (ws.readyState !== WebSocket.OPEN) {
-    append("Not connected. Please wait...\n");
-    return;
+<file path=".claude/settings.local.json">
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(bun run:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checkout:*)",
+      "Bash(grep:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(railway status:*)",
+      "Bash(railway link:*)",
+      "Bash(railway logs:*)",
+      "Bash(railway service:*)",
+      "Bash(railway variables:*)",
+      "Bash(dig:*)",
+      "Bash(curl:*)",
+      "Bash(nslookup:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(bun test:*)",
+      "Bash(pkill:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(bun:*)",
+      "Bash(git restore:*)",
+      "Bash(doctl account:*)",
+      "Bash(doctl compute region list:*)",
+      "Bash(doctl compute ssh-key list:*)",
+      "Bash(doctl compute droplet create openode-app --region nyc3 --size s-2vcpu-2gb --image ubuntu-22-04-x64 --ssh-keys 49557564 --wait)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(rsync:*)",
+      "Bash(chmod:*)",
+      "Bash(./deploy.sh)"
+    ],
+    "deny": []
   }
-  append(`You: ${text}\n`);
-  ws.send(JSON.stringify({ type:"prompt", session, workspace:"demo", text }));
-});
-
-function append(t){ log.textContent += t; log.scrollTop = log.scrollHeight; }
-const truncate = s => typeof s==="string"&&s.length>160 ? s.slice(0,160)+"…" : s;
-
-// Start connection
-input.disabled = true;
-connect();
-</file>
-
-<file path="public/index.html">
-<!doctype html><meta charset=utf-8>
-<title>Claude Code (Bun · WS)</title>
-<style>
-#log{border:1px solid #ccc;height:65vh;overflow:auto;white-space:pre-wrap;padding:.5rem}
-input{width:100%;padding:.5rem;margin-top:.5rem}
-</style>
-<h1>Claude Code via CLI</h1>
-<div id=log></div>
-<input id=msg placeholder="Ask Claude… (Enter to send)">
-<script type=module src="app.js"></script>
-</file>
-
-<file path="src/claude.ts">
-import { spawn } from "bun";
-import { mkdirSync } from "fs";
-import type { ReadableStream } from "node:stream/web";
-import { setTimeout } from "timers/promises";
-
-// -- CLI constants --
-const CLAUDE_BIN =
-  Bun.resolveSync?.("@anthropic-ai/claude-code/cli.js", import.meta.dir) ??
-  "claude";
-
-export interface ClaudeEvent {
-  type: string;        // thinking_delta | tool_call | tool_result | assistant_text_delta | done …
-  [k: string]: any;
-}
-
-export class ClaudeSession {
-  private proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
-  private reader: ReadableStreamDefaultReader<string>;
-
-  constructor(
-    public id: string,
-    public workspace: string
-  ) {
-    mkdirSync(`./sandbox/${workspace}`, { recursive: true });
-
-    this.proc = spawn([
-      CLAUDE_BIN, 
-      "--output-format", "stream-json",
-      "--dangerously-skip-permissions",
-      "--model", "claude-3-5-sonnet-20241022"
-    ], {
-      cwd: `./sandbox/${workspace}`,
-      stderr: "inherit",
-      stdout: "pipe",
-      stdin: "pipe",
-      env: { ...process.env, COLUMNS: "120", LINES: "40" }
-    });
-
-    if (this.proc.exitCode !== null) {
-      console.error("⚠️  Claude CLI failed", this.proc.exitCode);
-    }
-
-    this.reader = this.proc.stdout.getReader();
-  }
-
-  /** Send a user prompt or tool-level command */
-  write(line: string) {
-    this.proc.stdin.write(new TextEncoder().encode(line + "\n"));
-  }
-
-  /** Async generator that yields parsed CLI JSON lines */
-  async *stream(): AsyncGenerator<ClaudeEvent> {
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await this.reader.read();
-      if (done) break;
-      buffer += decoder.decode(value);
-      let nl;
-      while ((nl = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, nl).trim(); buffer = buffer.slice(nl + 1);
-        if (!line) continue;
-        try { yield JSON.parse(line); }
-        catch { /* ignore non-JSON noise */ }
-      }
-    }
-  }
-
-  kill() { this.proc.kill(); }
 }
 </file>
 
-<file path="src/server.ts">
-import { ClaudeSession, type ClaudeEvent } from "./claude";
+<file path=".github/workflows/claude-code-review.yml">
+name: Claude Code Review
 
-type ClientFrame =
-  | { type: "prompt"; session: string; workspace: string; text: string }
-  | { type: "cancel"; session: string };
+on:
+  pull_request:
+    types: [opened, synchronize]
+    # Optional: Only run on specific file changes
+    # paths:
+    #   - "src/**/*.ts"
+    #   - "src/**/*.tsx"
+    #   - "src/**/*.js"
+    #   - "src/**/*.jsx"
 
-const sessions = new Map<string, ClaudeSession>();
-
-Bun.serve({
-  port: 3000,
-  async fetch(req, server) {
-    const url = new URL(req.url);
+jobs:
+  claude-review:
+    # Optional: Filter by PR author
+    # if: |
+    #   github.event.pull_request.user.login == 'external-contributor' ||
+    #   github.event.pull_request.user.login == 'new-developer' ||
+    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
     
-    /* ---- static ---- */
-    if (url.pathname === "/" || url.pathname === "/index.html")
-      return new Response(Bun.file("public/index.html"));
-    if (url.pathname === "/app.js")
-      return new Response(Bun.file("public/app.js"), { headers: { "content-type":"text/javascript" }});
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-    /* ---- WS upgrade ---- */
-    if (url.pathname === "/chat") {
-      if (server.upgrade(req)) {
-        return; // connection upgraded
-      }
-      return new Response("WebSocket upgrade failed", { status: 400 });
-    }
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
-    return new Response("404", { status: 404 });
-  },
-  websocket: {
-    async message(ws, data) {
-      const frame = JSON.parse(data as string);
+          # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
+          # model: "claude-opus-4-20250514"
+          
+          # Direct prompt for automated review (no @claude mention needed)
+          direct_prompt: |
+            Please review this pull request and provide feedback on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Performance considerations
+            - Security concerns
+            - Test coverage
+            
+            Be constructive and helpful in your feedback.
 
-      /* --- PROMPT --- */
-      if (frame.type === "prompt") {
-        const { session, workspace, text } = frame;
-        let s = sessions.get(session);
-        if (!s) {
-          s = new ClaudeSession(session, workspace);
-          sessions.set(session, s);
+          # Optional: Use sticky comments to make Claude reuse the same comment on subsequent pushes to the same PR
+          # use_sticky_comment: true
+          
+          # Optional: Customize review based on file types
+          # direct_prompt: |
+          #   Review this PR focusing on:
+          #   - For TypeScript files: Type safety and proper interface usage
+          #   - For API endpoints: Security, input validation, and error handling
+          #   - For React components: Performance, accessibility, and best practices
+          #   - For tests: Coverage, edge cases, and test quality
+          
+          # Optional: Different prompts for different authors
+          # direct_prompt: |
+          #   ${{ github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR' && 
+          #   'Welcome! Please review this PR from a first-time contributor. Be encouraging and provide detailed explanations for any suggestions.' ||
+          #   'Please provide a thorough code review focusing on our coding standards and best practices.' }}
+          
+          # Optional: Add specific tools for running tests or linting
+          # allowed_tools: "Bash(npm run test),Bash(npm run lint),Bash(npm run typecheck)"
+          
+          # Optional: Skip review for certain conditions
+          # if: |
+          #   !contains(github.event.pull_request.title, '[skip-review]') &&
+          #   !contains(github.event.pull_request.title, '[WIP]')
+</file>
 
-          // Stream events → client
-          (async () => {
-            for await (const evt of s!.stream()) ws.send(JSON.stringify(evt));
-          })();
-        }
-        s.write(text);
-      }
+<file path=".github/workflows/claude.yml">
+name: Claude Code
 
-      /* --- CANCEL --- */
-      if (frame.type === "cancel") {
-        sessions.get(frame.session)?.kill();
-        sessions.delete(frame.session);
-      }
-    },
-    close(ws) { /* optional cleanup */ }
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # This is an optional setting that allows Claude to read CI results on PRs
+          additional_permissions: |
+            actions: read
+          
+          # Optional: Specify model (defaults to Claude Sonnet 4, uncomment for Claude Opus 4)
+          # model: "claude-opus-4-20250514"
+          
+          # Optional: Customize the trigger phrase (default: @claude)
+          # trigger_phrase: "/claude"
+          
+          # Optional: Trigger when specific user is assigned to an issue
+          # assignee_trigger: "claude-bot"
+          
+          # Optional: Allow Claude to run specific commands
+          # allowed_tools: "Bash(npm install),Bash(npm run build),Bash(npm run test:*),Bash(npm run lint:*)"
+          
+          # Optional: Add custom instructions for Claude to customize its behavior for your project
+          # custom_instructions: |
+          #   Follow our coding standards
+          #   Ensure all new code has tests
+          #   Use TypeScript for new files
+          
+          # Optional: Custom environment variables for Claude
+          # claude_env: |
+          #   NODE_ENV: test
+</file>
+
+<file path="src/persistence.ts">
+import { writeFile, readFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import path from "path";
+
+const SESSIONS_DIR = "./sessions";
+
+export interface SessionData {
+  id: string;
+  workspace: string;
+  messages: Array<{
+    role: "user" | "assistant";
+    content: string;
+    timestamp: number;
+  }>;
+  lastActive: number;
+}
+
+// Ensure sessions directory exists
+if (!existsSync(SESSIONS_DIR)) {
+  await mkdir(SESSIONS_DIR, { recursive: true });
+}
+
+export async function saveSession(sessionId: string, data: SessionData): Promise<void> {
+  const filePath = path.join(SESSIONS_DIR, `${sessionId}.json`);
+  await writeFile(filePath, JSON.stringify(data, null, 2));
+}
+
+export async function loadSession(sessionId: string): Promise<SessionData | null> {
+  const filePath = path.join(SESSIONS_DIR, `${sessionId}.json`);
+  try {
+    const content = await readFile(filePath, "utf-8");
+    return JSON.parse(content);
+  } catch {
+    return null;
   }
-});
+}
 
-console.log("🚀 http://localhost:3000");
+export async function addMessage(
+  sessionId: string, 
+  role: "user" | "assistant", 
+  content: string
+): Promise<void> {
+  let session = await loadSession(sessionId);
+  
+  if (!session) {
+    session = {
+      id: sessionId,
+      workspace: sessionId,
+      messages: [],
+      lastActive: Date.now()
+    };
+  }
+  
+  session.messages.push({
+    role,
+    content,
+    timestamp: Date.now()
+  });
+  
+  session.lastActive = Date.now();
+  
+  await saveSession(sessionId, session);
+}
 </file>
 
 <file path=".gitignore">
@@ -294,6 +366,143 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# Project specific
+sandbox/
+server-debug.log
+server-sdk.log
+server.log
+test-ws.js
+test-ws-bun.js
+test-simple.js
+</file>
+
+<file path="Caddyfile">
+openode.ai {
+    reverse_proxy localhost:3000
+    
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket localhost:3000
+}
+</file>
+
+<file path="CLAUDE.md">
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Overview
+
+This is a Bun-based web application that provides a WebSocket interface to the Claude SDK. It consists of a server that manages Claude SDK sessions and a web UI for interacting with Claude.
+
+## Key Commands
+
+```bash
+# Install dependencies
+bun install
+
+# Run the server (starts on http://localhost:3000)
+bun run index.ts
+
+# Run the main server application
+bun run src/server.ts
+```
+
+## Architecture
+
+### Core Components
+
+1. **WebSocket Server** (`src/server.ts`)
+   - Runs on port 3000
+   - Handles WebSocket connections at `/chat` endpoint
+   - Serves static files (HTML/JS) from `/public` directory
+   - Creates sandboxed workspaces in `./sandbox/` for each session
+   - Manages Claude SDK sessions with session IDs
+
+2. **Claude SDK Integration** (`src/claude.ts`)
+   - `ClaudeSDKSession` class wraps the Claude Code SDK
+   - Configured to run with `permissionMode: bypassPermissions`
+   - Uses "sonnet" model by default
+   - Streams SDK messages to WebSocket clients
+
+3. **Web Client** (`public/index.html`, `public/app.js`)
+   - Modern chat UI with real-time message streaming
+   - Handles user messages, assistant responses, tool calls, and system messages
+   - Auto-reconnecting WebSocket client
+   - Each client gets a unique session ID
+
+### Message Flow
+
+1. Client sends `{ type: "prompt", session, workspace, text }` via WebSocket
+2. Server creates/retrieves Claude SDK session
+3. SDK responses are streamed and converted to simplified client messages:
+   - `assistant_text_delta`: Text streaming from Claude
+   - `tool_call`: Tool usage notifications
+   - `tool_result`: Tool execution results
+   - `done`: Conversation completion with usage stats
+
+### Key Dependencies
+
+- `@anthropic-ai/claude-code`: Claude Code SDK for AI interactions
+- `@types/bun`: TypeScript types for Bun runtime
+- Uses Bun's built-in WebSocket server and file serving capabilities
+
+## Development Notes
+
+- The application creates workspace directories in `./sandbox/` - these are gitignored
+- Log files (`server.log`, `server-debug.log`, `server-sdk.log`) are gitignored
+- Test files (`test-*.js`) are gitignored
+- TypeScript is configured with strict mode and modern ES features
+</file>
+
+<file path="deploy.sh">
+#!/bin/bash
+# Deploy script for openode.ai
+
+SERVER="root@164.90.137.5"
+KEY="~/.ssh/openode-droplet-key"
+APP_DIR="/root/claude-bun-cli"
+
+echo "🚀 Deploying to openode.ai..."
+
+# Sync files
+echo "📦 Syncing files..."
+rsync -avz -e "ssh -i $KEY" \
+  --exclude=node_modules \
+  --exclude=.git \
+  --exclude=sandbox \
+  --exclude=logs \
+  --exclude="*.log" \
+  ./ $SERVER:$APP_DIR/
+
+# Install dependencies and restart
+echo "🔧 Installing dependencies and restarting..."
+ssh -i $KEY $SERVER "cd $APP_DIR && /root/.bun/bin/bun install && pm2 restart claude-bun"
+
+echo "✅ Deployment complete!"
+echo "🌐 Visit https://openode.ai"
+</file>
+
+<file path="ecosystem.config.js">
+module.exports = {
+  apps: [{
+    name: 'claude-bun',
+    script: '/root/.bun/bin/bun',
+    args: 'run /root/claude-bun-cli/src/server.ts',
+    env: {
+      NODE_ENV: 'production'
+    },
+    cwd: '/root/claude-bun-cli',
+    error_file: '/root/claude-bun-cli/logs/err.log',
+    out_file: '/root/claude-bun-cli/logs/out.log',
+    time: true,
+    autorestart: true,
+    max_restarts: 10
+  }]
+}
 </file>
 
 <file path="index.ts">
@@ -319,6 +528,149 @@ console.log("Hello via Bun!");
 }
 </file>
 
+<file path="plan-future.md">
+# VPS Deployment Plan: DigitalOcean + Caddy
+
+## Critical Considerations
+
+### 1. Environment & Permissions
+- Claude SDK needs write access to sandbox directories
+- Tool execution requires proper user permissions (file creation, command execution)
+- API key must be set as environment variable: `ANTHROPIC_API_KEY`
+
+### 2. Conversation Memory
+- Current implementation creates new `ClaudeSDKSession` per session ID
+- Sessions are stored in-memory (lost on server restart)
+- Consider Redis/SQLite for persistence across restarts
+
+### 3. WebSocket Configuration
+- Caddy needs explicit WebSocket proxying
+- Cloudflare requires WebSocket support enabled
+- Long-running connections need proper timeouts
+
+### 4. Sandbox Security
+- Each workspace gets isolated directory
+- Claude SDK runs with `bypassPermissions` - tools have full access
+- Consider disk space management for sandbox directories
+
+## Deployment Steps
+
+### Phase 1: Server Setup
+- Ubuntu 22.04 droplet (2GB RAM minimum)
+- SSH key authentication
+- Non-root user with sudo
+
+### Phase 2: Software Stack
+```
+Bun → PM2 → Caddy → Cloudflare → User
+```
+
+### Phase 3: Critical Configurations
+
+**Caddyfile:**
+```
+openode.ai {
+    reverse_proxy localhost:3000
+    
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket localhost:3000
+}
+```
+
+**PM2 Ecosystem:**
+```javascript
+module.exports = {
+  apps: [{
+    name: 'claude-bun',
+    script: 'bun',
+    args: 'run src/server.ts',
+    env: {
+      ANTHROPIC_API_KEY: 'your-key',
+      NODE_ENV: 'production'
+    },
+    error_file: './logs/err.log',
+    out_file: './logs/out.log'
+  }]
+}
+```
+
+### Phase 4: File System
+```
+/home/user/claude-bun-cli/
+├── sandbox/     (chmod 755, owned by app user)
+├── logs/        (for PM2 logs)
+└── [app files]
+```
+
+## Key Differences from Local
+
+1. **Persistence**: Server restarts lose in-memory sessions
+2. **Concurrency**: Multiple sessions can create resource contention
+3. **Disk Usage**: Sandbox directories accumulate over time
+4. **API Limits**: Consider rate limiting if usage grows
+5. **Logs**: Need proper log rotation
+
+## Quick Wins for Conversation Memory
+
+1. **Session Recovery**: Store session IDs in localStorage on client
+2. **Graceful Reconnect**: WebSocket auto-reconnect maintains session
+3. **Future Enhancement**: Add SQLite to persist conversation history
+
+## Todo List
+
+1. Set up DigitalOcean droplet with Ubuntu
+2. Install Bun runtime on the server
+3. Install and configure Caddy web server
+4. Deploy application code and dependencies
+5. Configure environment variables and API keys
+6. Set up process management with PM2
+7. Configure firewall and security settings
+8. Set up Cloudflare DNS and proxy settings
+9. Test WebSocket connections and tool execution
+10. Implement conversation persistence strategy
+</file>
+
+<file path="quick-setup.sh">
+#!/bin/bash
+set -e
+
+# Install Bun
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
+
+# Install Caddy
+apt update
+apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update
+apt install -y caddy
+
+# Install Node.js for PM2
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
+
+# Install PM2
+npm install -g pm2
+
+# Clone the repository
+cd /root
+git clone https://github.com/bentossell/claude-bun-cli.git
+cd claude-bun-cli
+
+# Install dependencies
+/root/.bun/bin/bun install
+
+# Create sandbox directory
+mkdir -p sandbox
+chmod 755 sandbox
+
+echo "Quick setup complete!"
+</file>
+
 <file path="README.md">
 # claude-bun-cli
 
@@ -335,6 +687,51 @@ bun run index.ts
 ```
 
 This project was created using `bun init` in bun v1.2.4. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+</file>
+
+<file path="setup-server.sh">
+#!/bin/bash
+set -e
+
+# Update system
+apt update && apt upgrade -y
+
+# Install required packages
+apt install -y curl git unzip build-essential
+
+# Install Bun
+curl -fsSL https://bun.sh/install | bash
+echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
+export PATH="$HOME/.bun/bin:$PATH"
+
+# Install Caddy
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update
+apt install -y caddy
+
+# Install PM2
+npm install -g pm2
+
+# Create app user
+useradd -m -s /bin/bash appuser
+
+# Create app directory
+mkdir -p /home/appuser/claude-bun-cli
+chown appuser:appuser /home/appuser/claude-bun-cli
+
+# Create PM2 startup script
+pm2 startup systemd -u appuser --hp /home/appuser
+
+echo "Base setup complete!"
+</file>
+
+<file path="start.sh">
+#!/bin/bash
+export PATH="/root/.bun/bin:$PATH"
+cd /root/claude-bun-cli
+exec /root/.bun/bin/bun run src/server.ts
 </file>
 
 <file path="tsconfig.json">
@@ -363,6 +760,501 @@ This project was created using `bun init` in bun v1.2.4. [Bun](https://bun.sh) i
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
+  }
+}
+</file>
+
+<file path="public/index.html">
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code (Bun · WS)</title>
+<style>
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: #f9fafb;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background: white;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.header h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.message {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 100%;
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user {
+  justify-content: flex-end;
+}
+
+.message.assistant {
+  justify-content: flex-start;
+}
+
+.message-content {
+  max-width: 70%;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.message.user .message-content {
+  background: linear-gradient(135deg, #ec4899 0%, #8b5cf6 100%);
+  color: white;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.message.assistant .message-content {
+  background: white;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.message.system .message-content {
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 0.875rem;
+  border-radius: 0.5rem;
+  max-width: 100%;
+  text-align: center;
+}
+
+.message.tool .message-content {
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.875rem;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  border: 1px solid #fcd34d;
+}
+
+.input-container {
+  background: white;
+  border-top: 1px solid #e5e7eb;
+  padding: 1rem 1.5rem;
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 2rem;
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease;
+}
+
+.input-wrapper:focus-within {
+  background: white;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+#msg {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 1rem;
+  color: #111827;
+  padding: 0.25rem 0.5rem;
+}
+
+#msg::placeholder {
+  color: #9ca3af;
+}
+
+#msg:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.send-button {
+  background: none;
+  border: none;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: #8b5cf6;
+  transition: color 0.2s ease;
+}
+
+.send-button:hover:not(:disabled) {
+  color: #7c3aed;
+}
+
+.send-button:disabled {
+  color: #d1d5db;
+  cursor: not-allowed;
+}
+
+/* Scrollbar styling */
+.chat-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-container::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.chat-container::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Claude Code via CLI</h1>
+</div>
+<div class="chat-container" id="chat"></div>
+<div class="input-container">
+  <div class="input-wrapper">
+    <input id="msg" placeholder="Ask Claude… (Enter to send)" autocomplete="off">
+    <button class="send-button" id="sendBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 2L11 13"></path>
+        <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+      </svg>
+    </button>
+  </div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
+</file>
+
+<file path="src/server.ts">
+import { ClaudeSDKSession } from "./claude";
+import { mkdirSync } from "fs";
+
+type ClientFrame =
+  | { type: "prompt"; session: string; workspace: string; text: string }
+  | { type: "cancel"; session: string };
+
+const sessions = new Map<string, ClaudeSDKSession>();
+
+Bun.serve({
+  port: 3000,
+  async fetch(req, server) {
+    const url = new URL(req.url);
+    
+    /* ---- static ---- */
+    if (url.pathname === "/" || url.pathname === "/index.html")
+      return new Response(Bun.file("public/index.html"));
+    if (url.pathname === "/app.js")
+      return new Response(Bun.file("public/app.js"), { headers: { "content-type":"text/javascript" }});
+
+    /* ---- WS upgrade ---- */
+    if (url.pathname === "/chat") {
+      if (server.upgrade(req)) {
+        return; // connection upgraded
+      }
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
+    return new Response("404", { status: 404 });
+  },
+  websocket: {
+    async message(ws, data) {
+      console.log("Received WebSocket message:", data);
+      const frame = JSON.parse(data as string);
+
+      /* --- PROMPT --- */
+      if (frame.type === "prompt") {
+        const { session, workspace, text } = frame;
+        console.log(`Processing prompt: "${text}" for session ${session}`);
+        
+        // Create workspace directory
+        mkdirSync(`./sandbox/${workspace}`, { recursive: true });
+        
+        let s = sessions.get(session);
+        if (!s) {
+          s = new ClaudeSDKSession(session, workspace);
+          sessions.set(session, s);
+        }
+
+        // Stream events → client
+        (async () => {
+          try {
+            console.log("Starting stream for prompt:", text);
+            for await (const msg of s!.stream(text)) {
+              console.log("Received SDK message:", msg.type);
+              // Convert SDK messages to simplified format for client
+              if (msg.type === "assistant" && msg.message.content) {
+                for (const content of msg.message.content) {
+                  if (content.type === "text") {
+                    const message = JSON.stringify({ 
+                      type: "assistant_text_delta", 
+                      text: content.text 
+                    });
+                    console.log("Sending to client:", message);
+                    ws.send(message);
+                  } else if (content.type === "tool_use") {
+                    ws.send(JSON.stringify({ 
+                      type: "tool_call", 
+                      tool: { 
+                        name: content.name, 
+                        args: content.input 
+                      } 
+                    }));
+                  }
+                }
+              } else if (msg.type === "user" && msg.message.content) {
+                // Tool results
+                for (const content of msg.message.content) {
+                  if (content.type === "tool_result") {
+                    ws.send(JSON.stringify({ 
+                      type: "tool_result", 
+                      tool: { 
+                        name: content.tool_use_id,
+                        result: content 
+                      } 
+                    }));
+                  }
+                }
+              } else if (msg.type === "result") {
+                ws.send(JSON.stringify({ 
+                  type: "done",
+                  result: msg.subtype === "success" ? msg.result : "Error",
+                  usage: msg.usage
+                }));
+              } else if (msg.type === "system") {
+                ws.send(JSON.stringify({ 
+                  type: "system",
+                  info: msg
+                }));
+              }
+            }
+          } catch (error) {
+            console.error("Stream error:", error);
+            ws.send(JSON.stringify({ 
+              type: "error", 
+              message: error instanceof Error ? error.message : "Unknown error" 
+            }));
+          }
+        })();
+      }
+
+      /* --- CANCEL --- */
+      if (frame.type === "cancel") {
+        sessions.get(frame.session)?.abort();
+        sessions.delete(frame.session);
+      }
+    },
+    close(ws) { /* optional cleanup */ }
+  }
+});
+
+console.log("🚀 http://localhost:3000");
+</file>
+
+<file path="public/app.js">
+const chat = document.getElementById("chat");
+const input = document.getElementById("msg");
+const sendBtn = document.getElementById("sendBtn");
+
+let ws;
+const session = crypto.randomUUID();
+let currentAssistantMessage = null;
+
+function connect() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}/chat`);
+  
+  ws.addEventListener("open", () => {
+    addMessage("Connected to server", "system");
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  });
+
+  ws.addEventListener("message", e => {
+    const m = JSON.parse(e.data);
+    
+    switch(m.type) {
+      case "assistant_text_delta":
+        if (!currentAssistantMessage) {
+          currentAssistantMessage = addMessage("", "assistant");
+        }
+        currentAssistantMessage.textContent += m.text;
+        scrollToBottom();
+        break;
+        
+      case "thinking_delta":
+        addMessage("Claude is thinking...", "system");
+        break;
+        
+      case "tool_call":
+        addMessage(`Using ${m.tool.name}: ${JSON.stringify(m.tool.args)}`, "tool");
+        break;
+        
+      case "tool_result":
+        const result = truncate(m.tool.result?.output);
+        addMessage(`Result: ${result}`, "tool");
+        break;
+        
+      case "assistant_text_end":
+        currentAssistantMessage = null;
+        break;
+    }
+  });
+
+  ws.addEventListener("close", () => {
+    addMessage("Connection closed", "system");
+    input.disabled = true;
+    sendBtn.disabled = true;
+  });
+
+  ws.addEventListener("error", (e) => {
+    addMessage("Connection error - retrying...", "system");
+    setTimeout(connect, 1000);
+  });
+}
+
+function sendMessage() {
+  const text = input.value.trim();
+  input.value = "";
+  
+  if (!text) return;
+  
+  if (ws.readyState !== WebSocket.OPEN) {
+    addMessage("Not connected. Please wait...", "system");
+    return;
+  }
+  
+  addMessage(text, "user");
+  currentAssistantMessage = null;
+  ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
+  input.focus();
+}
+
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+sendBtn.addEventListener("click", sendMessage);
+
+function addMessage(text, type) {
+  const messageDiv = document.createElement("div");
+  messageDiv.className = `message ${type}`;
+  
+  const contentDiv = document.createElement("div");
+  contentDiv.className = "message-content";
+  contentDiv.textContent = text;
+  
+  messageDiv.appendChild(contentDiv);
+  chat.appendChild(messageDiv);
+  
+  scrollToBottom();
+  
+  return contentDiv;
+}
+
+function scrollToBottom() {
+  chat.scrollTop = chat.scrollHeight;
+}
+
+const truncate = s => typeof s === "string" && s.length > 160 ? s.slice(0, 160) + "…" : s;
+
+// Start connection
+input.disabled = true;
+sendBtn.disabled = true;
+connect();
+
+// Focus input on page load
+window.addEventListener("load", () => {
+  input.focus();
+});
+
+// Keep focus on input
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("a, button:not(#sendBtn)")) {
+    input.focus();
+  }
+});
+</file>
+
+<file path="src/claude.ts">
+import { query } from "@anthropic-ai/claude-code/sdk.mjs";
+import type { SDKMessage } from "@anthropic-ai/claude-code/sdk.mjs";
+
+export class ClaudeSDKSession {
+  private abortController: AbortController;
+  
+  constructor(
+    public id: string,
+    public workspace: string
+  ) {
+    this.abortController = new AbortController();
+  }
+
+  async *stream(prompt: string): AsyncGenerator<SDKMessage> {
+    const response = query({
+      prompt,
+      abortController: this.abortController,
+      options: {
+        cwd: `./sandbox/${this.workspace}`,
+        permissionMode: "default",
+        model: "sonnet",
+        allowedTools: ["*"],
+        stderr: (data) => console.error("Claude stderr:", data)
+      }
+    });
+
+    for await (const message of response) {
+      yield message;
+    }
+  }
+
+  abort() {
+    this.abortController.abort();
   }
 }
 </file>
