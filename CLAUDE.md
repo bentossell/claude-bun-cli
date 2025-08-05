@@ -32,9 +32,10 @@ bun run src/server.ts
 
 2. **Claude SDK Integration** (`src/claude.ts`)
    - `ClaudeSDKSession` class wraps the Claude Code SDK
-   - Configured to run with `permissionMode: bypassPermissions`
+   - Configured to run with `permissionMode: bypassPermissions` for non-blocking operation
    - Uses "sonnet" model by default
    - Streams SDK messages to WebSocket clients
+   - Runs as non-root user `claude-app` in production for security
 
 3. **Web Client** (`public/index.html`, `public/app.js`)
    - Modern chat UI with real-time message streaming
@@ -64,3 +65,15 @@ bun run src/server.ts
 - Log files (`server.log`, `server-debug.log`, `server-sdk.log`) are gitignored
 - Test files (`test-*.js`) are gitignored
 - TypeScript is configured with strict mode and modern ES features
+
+## Security Configuration
+
+### Production Setup
+- Runs as non-root user `claude-app` with limited permissions
+- Uses `permissionMode: bypassPermissions` to prevent SDK hanging on permission prompts
+- Sandbox directories are isolated per workspace
+- `.claude/settings.json` defines allowed/denied commands for additional safety
+
+### Deployment Scripts
+- `setup-non-root.sh`: Sets up the non-root user and systemd service
+- `deploy-non-root.sh`: Deploys code with proper permissions for non-root operation
