@@ -7,9 +7,55 @@ const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 let currentAssistantText = "";
 
-// Cache for URL conversion to optimize performance during streaming
-let lastProcessedText = "";
-let lastProcessedResult = "";
+// Verify dependencies are loaded
+function verifyDependencies() {
+  if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+    console.warn('Markdown dependencies not loaded. Falling back to plain text.');
+    return false;
+  }
+  return true;
+}
+
+// Safe markdown rendering with sanitization
+function safeMarkdownRender(text) {
+  if (!verifyDependencies()) {
+    // Fallback to basic URL conversion if dependencies aren't loaded
+    return convertUrlsToLinks(text);
+  }
+  
+  try {
+    // Parse markdown to HTML
+    const rawHtml = marked.parse(text);
+    // Sanitize HTML to prevent XSS attacks
+    const cleanHtml = DOMPurify.sanitize(rawHtml, {
+      ALLOWED_TAGS: [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'br', 'hr',
+        'strong', 'b', 'em', 'i', 'del', 's',
+        'code', 'pre',
+        'ul', 'ol', 'li',
+        'blockquote',
+        'a',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+        'img'
+      ],
+      ALLOWED_ATTR: ['href', 'target', 'rel', 'src', 'alt', 'title'],
+      ALLOW_DATA_ATTR: false
+    });
+    return cleanHtml;
+  } catch (error) {
+    console.error('Markdown rendering error:', error);
+    // Fallback to escaped text on error
+    return escapeHtml(text);
+  }
+}
+
+// HTML escape function for fallback
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -28,12 +74,25 @@ function connect() {
     switch(m.type) {
       case "assistant_text_delta":
         if (!currentAssistantMessage) {
-          currentAssistantMessage = addMessage("", "assistant");
+          // Create new assistant message element
+          const messageDiv = document.createElement("div");
+          messageDiv.className = "message assistant";
+          
+          const contentDiv = document.createElement("div");
+          contentDiv.className = "message-content";
+          
+          messageDiv.appendChild(contentDiv);
+          chat.appendChild(messageDiv);
+          
+          currentAssistantMessage = contentDiv;
           currentAssistantText = "";
         }
+        
+        // Accumulate text
         currentAssistantText += m.text;
-        // Convert URLs to clickable links for assistant messages during streaming
-        currentAssistantMessage.innerHTML = convertUrlsToLinks(currentAssistantText);
+        
+        // Render markdown incrementally during streaming
+        currentAssistantMessage.innerHTML = safeMarkdownRender(currentAssistantText);
         scrollToBottom();
         break;
         
@@ -51,11 +110,12 @@ function connect() {
         break;
         
       case "assistant_text_end":
+        // Final render pass to ensure complete markdown parsing
+        if (currentAssistantMessage && currentAssistantText) {
+          currentAssistantMessage.innerHTML = safeMarkdownRender(currentAssistantText);
+        }
         currentAssistantMessage = null;
         currentAssistantText = "";
-        // Clear cache when assistant message ends
-        lastProcessedText = "";
-        lastProcessedResult = "";
         break;
     }
   });
@@ -106,10 +166,14 @@ function addMessage(text, type) {
   const contentDiv = document.createElement("div");
   contentDiv.className = "message-content";
   
-  // For assistant messages, convert URLs to clickable links
-  if (type === "assistant") {
-    contentDiv.innerHTML = convertUrlsToLinks(text);
+  // For assistant messages, render markdown
+  if (type === "assistant" && text) {
+    contentDiv.innerHTML = safeMarkdownRender(text);
+  } else if (type === "assistant") {
+    // Empty assistant message (will be filled during streaming)
+    contentDiv.innerHTML = "";
   } else {
+    // For non-assistant messages, use plain text
     contentDiv.textContent = text;
   }
   
@@ -122,11 +186,6 @@ function addMessage(text, type) {
 }
 
 function convertUrlsToLinks(text) {
-  // Performance optimization: return cached result if text hasn't changed
-  if (text === lastProcessedText) {
-    return lastProcessedResult;
-  }
-  
   // Escape HTML to prevent XSS
   const escaped = text.replace(/&/g, '&amp;')
                      .replace(/</g, '&lt;')
@@ -148,10 +207,6 @@ function convertUrlsToLinks(text) {
       return match;
     }
   });
-  
-  // Cache the result for performance during streaming
-  lastProcessedText = text;
-  lastProcessedResult = result;
   
   return result;
 }
