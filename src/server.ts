@@ -6,6 +6,7 @@ type ClientFrame =
   | { type: "cancel"; session: string };
 
 const sessions = new Map<string, ClaudeSDKSession>();
+const sessionStates = new Map<string, { hasStartedResponse: boolean }>();
 
 Bun.serve({
   port: 3000,
@@ -46,6 +47,14 @@ Bun.serve({
           s = new ClaudeSDKSession(session, workspace);
           sessions.set(session, s);
         }
+        
+        // Initialize session state
+        if (!sessionStates.has(session)) {
+          sessionStates.set(session, { hasStartedResponse: false });
+        }
+        
+        // Reset state for new prompt
+        sessionStates.get(session)!.hasStartedResponse = false;
 
         // Stream events → client
         (async () => {
@@ -55,15 +64,15 @@ Bun.serve({
             // Send thinking start event
             ws.send(JSON.stringify({ type: "thinking_start" }));
             
-            let hasStartedResponse = false;
+            const state = sessionStates.get(session)!;
             
             for await (const msg of s!.stream(text)) {
               console.log("Received SDK message:", msg.type);
               
               // End thinking indicator when we get the first assistant message
-              if (!hasStartedResponse && msg.type === "assistant") {
+              if (!state.hasStartedResponse && msg.type === "assistant") {
                 ws.send(JSON.stringify({ type: "thinking_end" }));
-                hasStartedResponse = true;
+                state.hasStartedResponse = true;
               }
               
               // Convert SDK messages to simplified format for client
@@ -114,6 +123,14 @@ Bun.serve({
             }
           } catch (error) {
             console.error("Stream error:", error);
+            
+            // Ensure thinking indicator is ended on error
+            const state = sessionStates.get(session);
+            if (state && !state.hasStartedResponse) {
+              ws.send(JSON.stringify({ type: "thinking_end" }));
+              state.hasStartedResponse = true;
+            }
+            
             ws.send(JSON.stringify({ 
               type: "error", 
               message: error instanceof Error ? error.message : "Unknown error" 
@@ -126,6 +143,7 @@ Bun.serve({
       if (frame.type === "cancel") {
         sessions.get(frame.session)?.abort();
         sessions.delete(frame.session);
+        sessionStates.delete(frame.session);
       }
     },
     close(ws) { /* optional cleanup */ }

@@ -8,6 +8,8 @@ let currentAssistantMessage = null;
 let thinkingIndicator = null;
 let thinkingStartTime = null;
 let thinkingTimerInterval = null;
+let thinkingTimerElement = null;
+let thinkingHidden = false;
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -33,7 +35,9 @@ function connect() {
         break;
         
       case "assistant_text_delta":
-        hideThinkingIndicator();
+        if (!thinkingHidden) {
+          hideThinkingIndicator();
+        }
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
         }
@@ -56,7 +60,9 @@ function connect() {
         
       case "assistant_text_end":
         currentAssistantMessage = null;
-        hideThinkingIndicator();
+        if (!thinkingHidden) {
+          hideThinkingIndicator();
+        }
         break;
         
       case "done":
@@ -92,6 +98,10 @@ function sendMessage() {
   
   addMessage(text, "user");
   currentAssistantMessage = null;
+  
+  // Reset thinking state for new message
+  thinkingHidden = false;
+  
   ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
   input.focus();
 }
@@ -130,7 +140,9 @@ const truncate = s => typeof s === "string" && s.length > 160 ? s.slice(0, 160) 
 function showThinkingIndicator() {
   if (thinkingIndicator) return;
   
+  thinkingHidden = false;
   thinkingStartTime = Date.now();
+  thinkingTimerElement = null;
   
   const messageDiv = document.createElement("div");
   messageDiv.className = "message thinking";
@@ -159,21 +171,26 @@ function showThinkingIndicator() {
   
   thinkingIndicator = messageDiv;
   
-  // Update timer every 100ms for smooth display
+  // Update timer every 500ms for better performance
   thinkingTimerInterval = setInterval(() => {
-    if (thinkingIndicator) {
+    if (thinkingIndicator && thinkingStartTime) {
+      if (!thinkingTimerElement) {
+        thinkingTimerElement = thinkingIndicator.querySelector('.thinking-timer');
+      }
       const elapsed = ((Date.now() - thinkingStartTime) / 1000).toFixed(1);
-      const timer = thinkingIndicator.querySelector('.thinking-timer');
-      if (timer) {
-        timer.textContent = ` (${elapsed}s)`;
+      if (thinkingTimerElement) {
+        thinkingTimerElement.textContent = ` (${elapsed}s)`;
       }
     }
-  }, 100);
+  }, 500);
   
   scrollToBottom();
 }
 
 function hideThinkingIndicator() {
+  if (thinkingHidden) return;
+  thinkingHidden = true;
+  
   if (thinkingTimerInterval) {
     clearInterval(thinkingTimerInterval);
     thinkingTimerInterval = null;
@@ -185,6 +202,7 @@ function hideThinkingIndicator() {
   }
   
   thinkingStartTime = null;
+  thinkingTimerElement = null;
 }
 
 // Start connection
