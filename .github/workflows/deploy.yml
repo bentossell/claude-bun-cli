@@ -1,0 +1,149 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/do_key
+        chmod 600 ~/.ssh/do_key
+        ssh-keyscan -H ${{ secrets.DO_HOST }} >> ~/.ssh/known_hosts
+
+    - name: Deploy to server
+      env:
+        DO_HOST: ${{ secrets.DO_HOST }}
+        DO_USER: ${{ secrets.DO_USER }}
+      run: |
+        # Create deployment script
+        cat > deploy-remote.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        echo "🚀 Starting deployment..."
+        
+        # Variables
+        APP_DIR="/home/claude-app/app"
+        TEMP_DIR="/tmp/claude-deploy-$(date +%s)"
+        
+        # Create temp directory
+        mkdir -p $TEMP_DIR
+        
+        # Copy files from stdin to temp directory
+        cd $TEMP_DIR
+        tar -xzf -
+        
+        # Stop service
+        echo "🛑 Stopping service..."
+        sudo systemctl stop claude-app || true
+        
+        # Backup current deployment
+        if [ -d "$APP_DIR" ]; then
+          echo "📦 Backing up current deployment..."
+          sudo cp -r $APP_DIR ${APP_DIR}.backup
+        fi
+        
+        # Copy new files
+        echo "📂 Deploying new files..."
+        sudo rm -rf $APP_DIR/*
+        sudo cp -r * $APP_DIR/
+        sudo cp -r .[^.]* $APP_DIR/ 2>/dev/null || true
+        
+        # Set ownership
+        sudo chown -R claude-app:claude-app $APP_DIR
+        
+        # Install dependencies
+        echo "📦 Installing dependencies..."
+        cd $APP_DIR
+        sudo -u claude-app /home/claude-app/.bun/bin/bun install
+        
+        # Update systemd if service file changed
+        if [ -f "setup-non-root.sh" ]; then
+          echo "🔧 Updating systemd configuration..."
+          # Extract service configuration from setup script
+          sudo sed -i "s|ExecStart=.*|ExecStart=/home/claude-app/.bun/bin/bun run src/server.ts|" /etc/systemd/system/claude-app.service
+          sudo systemctl daemon-reload
+        fi
+        
+        # Copy environment if exists in backup
+        if [ -f "${APP_DIR}.backup/.env" ]; then
+          echo "🔐 Restoring environment variables..."
+          sudo cp ${APP_DIR}.backup/.env $APP_DIR/.env
+          sudo chown claude-app:claude-app $APP_DIR/.env
+          sudo chmod 600 $APP_DIR/.env
+        fi
+        
+        # Start service
+        echo "✅ Starting service..."
+        sudo systemctl start claude-app
+        
+        # Verify deployment
+        sleep 5
+        if sudo systemctl is-active --quiet claude-app; then
+          echo "✅ Deployment successful!"
+          # Clean up backup
+          sudo rm -rf ${APP_DIR}.backup
+        else
+          echo "❌ Deployment failed! Rolling back..."
+          sudo rm -rf $APP_DIR
+          sudo mv ${APP_DIR}.backup $APP_DIR
+          sudo systemctl start claude-app
+          exit 1
+        fi
+        
+        # Clean up
+        rm -rf $TEMP_DIR
+        
+        echo "🎉 Deployment complete!"
+        EOF
+        
+        # Make it executable
+        chmod +x deploy-remote.sh
+        
+        # Create tarball excluding unnecessary files
+        tar -czf - \
+          --exclude='.git' \
+          --exclude='node_modules' \
+          --exclude='sandbox' \
+          --exclude='logs' \
+          --exclude='*.log' \
+          --exclude='.env' \
+          --exclude='.DS_Store' \
+          . | ssh -i ~/.ssh/do_key $DO_USER@$DO_HOST 'bash -s' < deploy-remote.sh
+
+    - name: Verify deployment
+      run: |
+        # Wait a moment for service to stabilize
+        sleep 10
+        
+        # Check if service is running
+        ssh -i ~/.ssh/do_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} \
+          'sudo systemctl is-active claude-app'
+        
+        # Check if website is responding
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://openode.ai)
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "✅ Website is responding correctly"
+        else
+          echo "❌ Website returned status code: $HTTP_STATUS"
+          exit 1
+        fi
+
+    - name: Send deployment notification
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "✅ Deployment to openode.ai successful!"
+        else
+          echo "❌ Deployment to openode.ai failed!"
+        fi

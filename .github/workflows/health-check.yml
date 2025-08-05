@@ -1,0 +1,79 @@
+name: Health Check
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check website status
+      id: check_site
+      run: |
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://openode.ai)
+        echo "HTTP_STATUS=$HTTP_STATUS" >> $GITHUB_OUTPUT
+        
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "✅ Website is up and running"
+          exit 0
+        else
+          echo "❌ Website is down! Status: $HTTP_STATUS"
+          exit 1
+        fi
+    
+    - name: Check service status
+      if: failure()
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.DO_SSH_PRIVATE_KEY }}" > ~/.ssh/do_key
+        chmod 600 ~/.ssh/do_key
+        ssh-keyscan -H ${{ secrets.DO_HOST }} >> ~/.ssh/known_hosts
+        
+        echo "Checking service status..."
+        ssh -i ~/.ssh/do_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} \
+          'sudo systemctl status claude-app || true'
+    
+    - name: Attempt auto-recovery
+      if: failure()
+      run: |
+        echo "Attempting to restart service..."
+        ssh -i ~/.ssh/do_key ${{ secrets.DO_USER }}@${{ secrets.DO_HOST }} \
+          'sudo systemctl restart claude-app || true'
+        
+        sleep 10
+        
+        # Check again
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://openode.ai)
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "✅ Service recovered successfully"
+          exit 0
+        else
+          echo "❌ Auto-recovery failed"
+          exit 1
+        fi
+    
+    - name: Create issue on failure
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: '🚨 Production Down: openode.ai is not responding',
+            body: `The production site is down as of ${new Date().toISOString()}
+            
+            **Status**: HTTP ${{ steps.check_site.outputs.HTTP_STATUS }}
+            
+            **Auto-recovery**: Attempted but failed
+            
+            **Action required**: Manual intervention needed
+            
+            Check the [workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) for details.`,
+            labels: ['production', 'urgent']
+          })
+          console.log(`Created issue #${issue.data.number}`)

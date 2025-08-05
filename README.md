@@ -22,19 +22,18 @@ Visit http://localhost:3000
 
 ## Production Deployment
 
-### Security Setup
+### Automated Deployment
 
-This app runs as a non-root user in production for enhanced security:
+This app automatically deploys to production when you push to `main`:
 
-1. **Initial server setup** (run once):
-   ```bash
-   ./setup-non-root.sh
-   ```
+1. **One-time setup**: Add GitHub secrets (see [AUTOMATED-DEPLOYMENT.md](AUTOMATED-DEPLOYMENT.md))
+2. **Deploy**: Just push to `main` - GitHub Actions handles everything!
 
-2. **Deploy updates**:
-   ```bash
-   ./deploy-non-root.sh
-   ```
+### Manual Deployment (if needed)
+
+```bash
+./deploy-non-root.sh
+```
 
 ### Security Features
 
