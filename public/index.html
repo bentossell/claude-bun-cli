@@ -100,6 +100,29 @@ body {
   border: 1px solid #fcd34d;
 }
 
+/* Link styling */
+.message-content a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.2s ease;
+}
+
+.message-content a:hover {
+  color: #1d4ed8;
+  text-decoration-thickness: 2px;
+}
+
+.message.user .message-content a {
+  color: #fbbf24;
+  text-decoration-color: rgba(251, 191, 36, 0.4);
+}
+
+.message.user .message-content a:hover {
+  color: #f59e0b;
+  text-decoration-color: #f59e0b;
+}
+
 .input-container {
   background: white;
   border-top: 1px solid #e5e7eb;

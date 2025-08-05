@@ -5,6 +5,11 @@ const sendBtn = document.getElementById("sendBtn");
 let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
+let currentAssistantText = "";
+
+// Cache for URL conversion to optimize performance during streaming
+let lastProcessedText = "";
+let lastProcessedResult = "";
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -24,8 +29,11 @@ function connect() {
       case "assistant_text_delta":
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
+          currentAssistantText = "";
         }
-        currentAssistantMessage.textContent += m.text;
+        currentAssistantText += m.text;
+        // Convert URLs to clickable links for assistant messages during streaming
+        currentAssistantMessage.innerHTML = convertUrlsToLinks(currentAssistantText);
         scrollToBottom();
         break;
         
@@ -44,6 +52,10 @@ function connect() {
         
       case "assistant_text_end":
         currentAssistantMessage = null;
+        currentAssistantText = "";
+        // Clear cache when assistant message ends
+        lastProcessedText = "";
+        lastProcessedResult = "";
         break;
     }
   });
@@ -73,6 +85,7 @@ function sendMessage() {
   
   addMessage(text, "user");
   currentAssistantMessage = null;
+  currentAssistantText = "";
   ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
   input.focus();
 }
@@ -92,7 +105,13 @@ function addMessage(text, type) {
   
   const contentDiv = document.createElement("div");
   contentDiv.className = "message-content";
-  contentDiv.textContent = text;
+  
+  // For assistant messages, convert URLs to clickable links
+  if (type === "assistant") {
+    contentDiv.innerHTML = convertUrlsToLinks(text);
+  } else {
+    contentDiv.textContent = text;
+  }
   
   messageDiv.appendChild(contentDiv);
   chat.appendChild(messageDiv);
@@ -100,6 +119,41 @@ function addMessage(text, type) {
   scrollToBottom();
   
   return contentDiv;
+}
+
+function convertUrlsToLinks(text) {
+  // Performance optimization: return cached result if text hasn't changed
+  if (text === lastProcessedText) {
+    return lastProcessedResult;
+  }
+  
+  // Escape HTML to prevent XSS
+  const escaped = text.replace(/&/g, '&amp;')
+                     .replace(/</g, '&lt;')
+                     .replace(/>/g, '&gt;')
+                     .replace(/"/g, '&quot;')
+                     .replace(/'/g, '&#039;');
+  
+  // Enhanced URL regex that excludes quotes to prevent HTML attribute issues
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+  
+  // Convert URLs to links with validation
+  const result = escaped.replace(urlRegex, (match) => {
+    try {
+      // Validate the URL to avoid creating links for malformed URLs
+      new URL(match);
+      return `<a href="${match}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+    } catch {
+      // Return original text if invalid URL
+      return match;
+    }
+  });
+  
+  // Cache the result for performance during streaming
+  lastProcessedText = text;
+  lastProcessedResult = result;
+  
+  return result;
 }
 
 function scrollToBottom() {
