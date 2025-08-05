@@ -7,6 +7,10 @@ const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 let currentAssistantText = "";
 
+// Cache for URL conversion to optimize performance during streaming
+let lastProcessedText = "";
+let lastProcessedResult = "";
+
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/chat`);
@@ -28,6 +32,7 @@ function connect() {
           currentAssistantText = "";
         }
         currentAssistantText += m.text;
+        // Convert URLs to clickable links for assistant messages during streaming
         currentAssistantMessage.innerHTML = convertUrlsToLinks(currentAssistantText);
         scrollToBottom();
         break;
@@ -48,6 +53,9 @@ function connect() {
       case "assistant_text_end":
         currentAssistantMessage = null;
         currentAssistantText = "";
+        // Clear cache when assistant message ends
+        lastProcessedText = "";
+        lastProcessedResult = "";
         break;
     }
   });
@@ -114,6 +122,11 @@ function addMessage(text, type) {
 }
 
 function convertUrlsToLinks(text) {
+  // Performance optimization: return cached result if text hasn't changed
+  if (text === lastProcessedText) {
+    return lastProcessedResult;
+  }
+  
   // Escape HTML to prevent XSS
   const escaped = text.replace(/&/g, '&amp;')
                      .replace(/</g, '&lt;')
@@ -121,9 +134,26 @@ function convertUrlsToLinks(text) {
                      .replace(/"/g, '&quot;')
                      .replace(/'/g, '&#039;');
   
-  // Convert URLs to links
-  const urlRegex = /(https?:\/\/[^\s<]+)/g;
-  return escaped.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Enhanced URL regex that excludes quotes to prevent HTML attribute issues
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+  
+  // Convert URLs to links with validation
+  const result = escaped.replace(urlRegex, (match) => {
+    try {
+      // Validate the URL to avoid creating links for malformed URLs
+      new URL(match);
+      return `<a href="${match}" target="_blank" rel="noopener noreferrer">${match}</a>`;
+    } catch {
+      // Return original text if invalid URL
+      return match;
+    }
+  });
+  
+  // Cache the result for performance during streaming
+  lastProcessedText = text;
+  lastProcessedResult = result;
+  
+  return result;
 }
 
 function scrollToBottom() {
