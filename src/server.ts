@@ -51,8 +51,21 @@ Bun.serve({
         (async () => {
           try {
             console.log("Starting stream for prompt:", text);
+            
+            // Send thinking start event
+            ws.send(JSON.stringify({ type: "thinking_start" }));
+            
+            let hasStartedResponse = false;
+            
             for await (const msg of s!.stream(text)) {
               console.log("Received SDK message:", msg.type);
+              
+              // End thinking indicator when we get the first assistant message
+              if (!hasStartedResponse && msg.type === "assistant") {
+                ws.send(JSON.stringify({ type: "thinking_end" }));
+                hasStartedResponse = true;
+              }
+              
               // Convert SDK messages to simplified format for client
               if (msg.type === "assistant" && msg.message.content) {
                 for (const content of msg.message.content) {

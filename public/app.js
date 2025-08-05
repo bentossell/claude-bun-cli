@@ -5,6 +5,9 @@ const sendBtn = document.getElementById("sendBtn");
 let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
+let thinkingIndicator = null;
+let thinkingStartTime = null;
+let thinkingTimerInterval = null;
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -21,7 +24,16 @@ function connect() {
     const m = JSON.parse(e.data);
     
     switch(m.type) {
+      case "thinking_start":
+        showThinkingIndicator();
+        break;
+        
+      case "thinking_end":
+        hideThinkingIndicator();
+        break;
+        
       case "assistant_text_delta":
+        hideThinkingIndicator();
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
         }
@@ -30,7 +42,7 @@ function connect() {
         break;
         
       case "thinking_delta":
-        addMessage("Claude is thinking...", "system");
+        // Legacy support
         break;
         
       case "tool_call":
@@ -44,12 +56,19 @@ function connect() {
         
       case "assistant_text_end":
         currentAssistantMessage = null;
+        hideThinkingIndicator();
+        break;
+        
+      case "done":
+      case "error":
+        hideThinkingIndicator();
         break;
     }
   });
 
   ws.addEventListener("close", () => {
     addMessage("Connection closed", "system");
+    hideThinkingIndicator();
     input.disabled = true;
     sendBtn.disabled = true;
   });
@@ -107,6 +126,66 @@ function scrollToBottom() {
 }
 
 const truncate = s => typeof s === "string" && s.length > 160 ? s.slice(0, 160) + "…" : s;
+
+function showThinkingIndicator() {
+  if (thinkingIndicator) return;
+  
+  thinkingStartTime = Date.now();
+  
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "message thinking";
+  messageDiv.id = "thinking-indicator";
+  
+  const contentDiv = document.createElement("div");
+  contentDiv.className = "message-content";
+  
+  const thinkingText = document.createElement("span");
+  thinkingText.className = "thinking-text";
+  thinkingText.textContent = "Claude is thinking";
+  
+  const dotsSpan = document.createElement("span");
+  dotsSpan.className = "thinking-dots";
+  dotsSpan.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+  
+  const timerSpan = document.createElement("span");
+  timerSpan.className = "thinking-timer";
+  timerSpan.textContent = " (0s)";
+  
+  contentDiv.appendChild(thinkingText);
+  contentDiv.appendChild(dotsSpan);
+  contentDiv.appendChild(timerSpan);
+  messageDiv.appendChild(contentDiv);
+  chat.appendChild(messageDiv);
+  
+  thinkingIndicator = messageDiv;
+  
+  // Update timer every 100ms for smooth display
+  thinkingTimerInterval = setInterval(() => {
+    if (thinkingIndicator) {
+      const elapsed = ((Date.now() - thinkingStartTime) / 1000).toFixed(1);
+      const timer = thinkingIndicator.querySelector('.thinking-timer');
+      if (timer) {
+        timer.textContent = ` (${elapsed}s)`;
+      }
+    }
+  }, 100);
+  
+  scrollToBottom();
+}
+
+function hideThinkingIndicator() {
+  if (thinkingTimerInterval) {
+    clearInterval(thinkingTimerInterval);
+    thinkingTimerInterval = null;
+  }
+  
+  if (thinkingIndicator) {
+    thinkingIndicator.remove();
+    thinkingIndicator = null;
+  }
+  
+  thinkingStartTime = null;
+}
 
 // Start connection
 input.disabled = true;
