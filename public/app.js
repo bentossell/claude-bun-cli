@@ -6,6 +6,11 @@ let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 let currentAssistantText = "";
+let thinkingIndicator = null;
+let thinkingTimer = null;
+let thinkingStartTime = null;
+let isThinking = false;
+let isHidingThinking = false;
 
 // Verify dependencies are loaded
 function verifyDependencies() {
@@ -72,7 +77,19 @@ function connect() {
     const m = JSON.parse(e.data);
     
     switch(m.type) {
+      case "thinking_start":
+        showThinkingIndicator();
+        break;
+        
+      case "thinking_end":
+        hideThinkingIndicator();
+        break;
       case "assistant_text_delta":
+        // Hide thinking indicator when assistant starts responding
+        if (isThinking) {
+          hideThinkingIndicator();
+        }
+        
         if (!currentAssistantMessage) {
           // Create new assistant message element
           const messageDiv = document.createElement("div");
@@ -146,6 +163,8 @@ function sendMessage() {
   addMessage(text, "user");
   currentAssistantMessage = null;
   currentAssistantText = "";
+  isThinking = false;
+  isHidingThinking = false;
   ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
   input.focus();
 }
@@ -209,6 +228,71 @@ function convertUrlsToLinks(text) {
   });
   
   return result;
+}
+
+function showThinkingIndicator() {
+  if (isThinking || thinkingIndicator) return;
+  
+  isThinking = true;
+  thinkingStartTime = Date.now();
+  
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "message assistant thinking-message";
+  
+  const contentDiv = document.createElement("div");
+  contentDiv.className = "message-content";
+  
+  const thinkingContent = document.createElement("span");
+  thinkingContent.className = "thinking-content";
+  thinkingContent.innerHTML = `
+    <span>Claude is thinking</span>
+    <span class="thinking-dots">
+      <span class="dot">.</span>
+      <span class="dot">.</span>
+      <span class="dot">.</span>
+    </span>
+    <span class="thinking-timer"></span>
+  `;
+  
+  contentDiv.appendChild(thinkingContent);
+  messageDiv.appendChild(contentDiv);
+  chat.appendChild(messageDiv);
+  
+  thinkingIndicator = messageDiv;
+  
+  // Cache the timer element for performance
+  const timerElement = thinkingContent.querySelector('.thinking-timer');
+  
+  // Update timer every 500ms for better performance
+  thinkingTimer = setInterval(() => {
+    if (thinkingStartTime && timerElement) {
+      const elapsed = ((Date.now() - thinkingStartTime) / 1000).toFixed(1);
+      timerElement.textContent = ` (${elapsed}s)`;
+    }
+  }, 500);
+  
+  scrollToBottom();
+}
+
+function hideThinkingIndicator() {
+  // Prevent multiple simultaneous hide calls
+  if (isHidingThinking || !isThinking) return;
+  
+  isHidingThinking = true;
+  isThinking = false;
+  
+  if (thinkingTimer) {
+    clearInterval(thinkingTimer);
+    thinkingTimer = null;
+  }
+  
+  if (thinkingIndicator) {
+    thinkingIndicator.remove();
+    thinkingIndicator = null;
+  }
+  
+  thinkingStartTime = null;
+  isHidingThinking = false;
 }
 
 function scrollToBottom() {
