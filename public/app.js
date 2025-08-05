@@ -6,6 +6,35 @@ let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 
+// Verify required libraries are loaded
+function verifyDependencies() {
+  if (typeof marked === 'undefined') {
+    console.error('Marked library not loaded');
+    return false;
+  }
+  if (typeof DOMPurify === 'undefined') {
+    console.error('DOMPurify library not loaded');
+    return false;
+  }
+  return true;
+}
+
+// Safe markdown rendering with error handling
+function safeMarkdownRender(text) {
+  if (!verifyDependencies()) {
+    console.warn('Dependencies not available, falling back to plain text');
+    return text;
+  }
+  
+  try {
+    const html = marked.parse(text);
+    return DOMPurify.sanitize(html);
+  } catch (error) {
+    console.error('Markdown parsing failed:', error);
+    return text; // Fallback to plain text
+  }
+}
+
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/chat`);
@@ -29,7 +58,7 @@ function connect() {
           };
         }
         currentAssistantMessage.text += m.text;
-        currentAssistantMessage.element.innerHTML = marked.parse(currentAssistantMessage.text);
+        currentAssistantMessage.element.innerHTML = safeMarkdownRender(currentAssistantMessage.text);
         scrollToBottom();
         break;
         
@@ -49,7 +78,7 @@ function connect() {
       case "assistant_text_end":
         if (currentAssistantMessage) {
           // Final render to ensure complete markdown parsing
-          currentAssistantMessage.element.innerHTML = marked.parse(currentAssistantMessage.text);
+          currentAssistantMessage.element.innerHTML = safeMarkdownRender(currentAssistantMessage.text);
         }
         currentAssistantMessage = null;
         break;
@@ -103,7 +132,7 @@ function addMessage(text, type) {
   
   // For assistant messages, render markdown; for others, use plain text
   if (type === "assistant" && text) {
-    contentDiv.innerHTML = marked.parse(text);
+    contentDiv.innerHTML = safeMarkdownRender(text);
   } else {
     contentDiv.textContent = text;
   }
