@@ -200,6 +200,179 @@ body {
 .chat-container::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+/* Markdown styling for assistant messages */
+.message.assistant .message-content {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+.message.assistant .message-content h1,
+.message.assistant .message-content h2,
+.message.assistant .message-content h3,
+.message.assistant .message-content h4,
+.message.assistant .message-content h5,
+.message.assistant .message-content h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: #111827;
+}
+
+.message.assistant .message-content h1 { font-size: 1.875rem; }
+.message.assistant .message-content h2 { font-size: 1.5rem; }
+.message.assistant .message-content h3 { font-size: 1.25rem; }
+.message.assistant .message-content h4 { font-size: 1.125rem; }
+.message.assistant .message-content h5 { font-size: 1rem; }
+.message.assistant .message-content h6 { font-size: 0.875rem; color: #6b7280; }
+
+.message.assistant .message-content h1:first-child,
+.message.assistant .message-content h2:first-child,
+.message.assistant .message-content h3:first-child,
+.message.assistant .message-content h4:first-child,
+.message.assistant .message-content h5:first-child,
+.message.assistant .message-content h6:first-child {
+  margin-top: 0;
+}
+
+.message.assistant .message-content p {
+  margin: 0.75em 0;
+  line-height: 1.6;
+}
+
+.message.assistant .message-content p:first-child {
+  margin-top: 0;
+}
+
+.message.assistant .message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message.assistant .message-content ul,
+.message.assistant .message-content ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+}
+
+.message.assistant .message-content ul {
+  list-style-type: disc;
+}
+
+.message.assistant .message-content ol {
+  list-style-type: decimal;
+}
+
+.message.assistant .message-content li {
+  margin: 0.25em 0;
+  line-height: 1.6;
+}
+
+.message.assistant .message-content ul ul,
+.message.assistant .message-content ol ol,
+.message.assistant .message-content ul ol,
+.message.assistant .message-content ol ul {
+  margin: 0.25em 0;
+}
+
+.message.assistant .message-content code {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.25rem;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.875em;
+  color: #dc2626;
+}
+
+.message.assistant .message-content pre {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1em 0;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.message.assistant .message-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #e5e7eb;
+  font-size: 0.875rem;
+}
+
+.message.assistant .message-content blockquote {
+  border-left: 4px solid #8b5cf6;
+  padding-left: 1rem;
+  margin: 1em 0;
+  color: #4b5563;
+  font-style: italic;
+}
+
+.message.assistant .message-content a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.2s ease;
+}
+
+.message.assistant .message-content a:hover {
+  color: #1d4ed8;
+  text-decoration-thickness: 2px;
+}
+
+.message.assistant .message-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.message.assistant .message-content th,
+.message.assistant .message-content td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.message.assistant .message-content th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #111827;
+}
+
+.message.assistant .message-content tr:nth-child(even) {
+  background: #f9fafb;
+}
+
+.message.assistant .message-content hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 1.5em 0;
+}
+
+.message.assistant .message-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1em 0;
+}
+
+.message.assistant .message-content strong {
+  font-weight: 600;
+  color: #111827;
+}
+
+.message.assistant .message-content em {
+  font-style: italic;
+}
+
+.message.assistant .message-content del {
+  text-decoration: line-through;
+  color: #6b7280;
+}
 </style>
 </head>
 <body>
@@ -218,6 +391,9 @@ body {
     </button>
   </div>
 </div>
+<!-- Markdown and security dependencies -->
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/marked.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.5/dist/purify.min.js" crossorigin="anonymous"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
