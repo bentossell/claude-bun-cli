@@ -177,6 +177,117 @@ body {
 .chat-container::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;
 }
+
+/* Markdown styles for assistant messages */
+.message.assistant .message-content h1,
+.message.assistant .message-content h2,
+.message.assistant .message-content h3,
+.message.assistant .message-content h4,
+.message.assistant .message-content h5,
+.message.assistant .message-content h6 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.message.assistant .message-content h1 { font-size: 1.5rem; }
+.message.assistant .message-content h2 { font-size: 1.25rem; }
+.message.assistant .message-content h3 { font-size: 1.125rem; }
+.message.assistant .message-content h4 { font-size: 1rem; }
+
+.message.assistant .message-content p {
+  margin-bottom: 0.75rem;
+}
+
+.message.assistant .message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.message.assistant .message-content ul,
+.message.assistant .message-content ol {
+  margin-left: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.message.assistant .message-content li {
+  margin-bottom: 0.25rem;
+}
+
+.message.assistant .message-content code {
+  background: #f3f4f6;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 0.875em;
+  color: #dc2626;
+}
+
+.message.assistant .message-content pre {
+  background: #1f2937;
+  color: #f9fafb;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.75rem;
+}
+
+.message.assistant .message-content pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.message.assistant .message-content blockquote {
+  border-left: 3px solid #8b5cf6;
+  padding-left: 1rem;
+  margin-left: 0;
+  margin-bottom: 0.75rem;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.message.assistant .message-content a {
+  color: #8b5cf6;
+  text-decoration: underline;
+}
+
+.message.assistant .message-content a:hover {
+  color: #7c3aed;
+}
+
+.message.assistant .message-content strong {
+  font-weight: 600;
+}
+
+.message.assistant .message-content em {
+  font-style: italic;
+}
+
+.message.assistant .message-content hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 1rem 0;
+}
+
+.message.assistant .message-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+.message.assistant .message-content table th,
+.message.assistant .message-content table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.message.assistant .message-content table th {
+  background: #f9fafb;
+  font-weight: 600;
+}
 </style>
 </head>
 <body>
@@ -195,6 +306,7 @@ body {
     </button>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

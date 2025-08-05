@@ -23,9 +23,13 @@ function connect() {
     switch(m.type) {
       case "assistant_text_delta":
         if (!currentAssistantMessage) {
-          currentAssistantMessage = addMessage("", "assistant");
+          currentAssistantMessage = {
+            element: addMessage("", "assistant"),
+            text: ""
+          };
         }
-        currentAssistantMessage.textContent += m.text;
+        currentAssistantMessage.text += m.text;
+        currentAssistantMessage.element.innerHTML = marked.parse(currentAssistantMessage.text);
         scrollToBottom();
         break;
         
@@ -43,6 +47,10 @@ function connect() {
         break;
         
       case "assistant_text_end":
+        if (currentAssistantMessage) {
+          // Final render to ensure complete markdown parsing
+          currentAssistantMessage.element.innerHTML = marked.parse(currentAssistantMessage.text);
+        }
         currentAssistantMessage = null;
         break;
     }
@@ -92,7 +100,13 @@ function addMessage(text, type) {
   
   const contentDiv = document.createElement("div");
   contentDiv.className = "message-content";
-  contentDiv.textContent = text;
+  
+  // For assistant messages, render markdown; for others, use plain text
+  if (type === "assistant" && text) {
+    contentDiv.innerHTML = marked.parse(text);
+  } else {
+    contentDiv.textContent = text;
+  }
   
   messageDiv.appendChild(contentDiv);
   chat.appendChild(messageDiv);
