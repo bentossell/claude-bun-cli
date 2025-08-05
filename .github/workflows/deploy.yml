@@ -129,7 +129,7 @@ jobs:
           rm -rf $TEMP_DIR /tmp/deploy.tar.gz
           
           echo "🎉 Deployment complete!"
-ENDSSH
+        ENDSSH
 
     - name: Verify deployment
       run: |
