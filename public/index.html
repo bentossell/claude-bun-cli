@@ -373,6 +373,64 @@ body {
   text-decoration: line-through;
   color: #6b7280;
 }
+
+/* Thinking indicator styles */
+.thinking-message .message-content {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  border: none;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+}
+
+.thinking-content {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.95rem;
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 0.125rem;
+  margin-left: 0.125rem;
+}
+
+.thinking-dots .dot {
+  opacity: 0;
+  animation: thinkingDot 1.4s infinite;
+  display: inline-block;
+}
+
+.thinking-dots .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.thinking-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinkingDot {
+  0%, 60%, 100% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+.thinking-timer {
+  margin-left: 0.5rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+  font-size: 0.875rem;
+}
 </style>
 </head>
 <body>

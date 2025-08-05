@@ -6,6 +6,7 @@ type ClientFrame =
   | { type: "cancel"; session: string };
 
 const sessions = new Map<string, ClaudeSDKSession>();
+const sessionStates = new Map<string, { isThinking: boolean; hasResponded: boolean }>();
 
 Bun.serve({
   port: 3000,
@@ -47,6 +48,10 @@ Bun.serve({
           sessions.set(session, s);
         }
 
+        // Initialize session state and send thinking_start
+        sessionStates.set(session, { isThinking: true, hasResponded: false });
+        ws.send(JSON.stringify({ type: "thinking_start" }));
+        
         // Stream events → client
         (async () => {
           try {
@@ -55,6 +60,13 @@ Bun.serve({
               console.log("Received SDK message:", msg.type);
               // Convert SDK messages to simplified format for client
               if (msg.type === "assistant" && msg.message.content) {
+                // Check if this is the first assistant response
+                const state = sessionStates.get(session);
+                if (state && state.isThinking && !state.hasResponded) {
+                  state.hasResponded = true;
+                  state.isThinking = false;
+                  ws.send(JSON.stringify({ type: "thinking_end" }));
+                }
                 for (const content of msg.message.content) {
                   if (content.type === "text") {
                     const message = JSON.stringify({ 
@@ -101,6 +113,12 @@ Bun.serve({
             }
           } catch (error) {
             console.error("Stream error:", error);
+            // End thinking indicator on error
+            const state = sessionStates.get(session);
+            if (state && state.isThinking) {
+              state.isThinking = false;
+              ws.send(JSON.stringify({ type: "thinking_end" }));
+            }
             ws.send(JSON.stringify({ 
               type: "error", 
               message: error instanceof Error ? error.message : "Unknown error" 
@@ -113,6 +131,12 @@ Bun.serve({
       if (frame.type === "cancel") {
         sessions.get(frame.session)?.abort();
         sessions.delete(frame.session);
+        // Clean up session state
+        const state = sessionStates.get(frame.session);
+        if (state && state.isThinking) {
+          ws.send(JSON.stringify({ type: "thinking_end" }));
+        }
+        sessionStates.delete(frame.session);
       }
     },
     close(ws) { /* optional cleanup */ }
