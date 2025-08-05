@@ -5,6 +5,7 @@ const sendBtn = document.getElementById("sendBtn");
 let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
+let currentAssistantText = "";
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -24,8 +25,10 @@ function connect() {
       case "assistant_text_delta":
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
+          currentAssistantText = "";
         }
-        currentAssistantMessage.textContent += m.text;
+        currentAssistantText += m.text;
+        currentAssistantMessage.innerHTML = convertUrlsToLinks(currentAssistantText);
         scrollToBottom();
         break;
         
@@ -44,6 +47,7 @@ function connect() {
         
       case "assistant_text_end":
         currentAssistantMessage = null;
+        currentAssistantText = "";
         break;
     }
   });
@@ -73,6 +77,7 @@ function sendMessage() {
   
   addMessage(text, "user");
   currentAssistantMessage = null;
+  currentAssistantText = "";
   ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
   input.focus();
 }
@@ -92,7 +97,13 @@ function addMessage(text, type) {
   
   const contentDiv = document.createElement("div");
   contentDiv.className = "message-content";
-  contentDiv.textContent = text;
+  
+  // For assistant messages, convert URLs to clickable links
+  if (type === "assistant") {
+    contentDiv.innerHTML = convertUrlsToLinks(text);
+  } else {
+    contentDiv.textContent = text;
+  }
   
   messageDiv.appendChild(contentDiv);
   chat.appendChild(messageDiv);
@@ -100,6 +111,19 @@ function addMessage(text, type) {
   scrollToBottom();
   
   return contentDiv;
+}
+
+function convertUrlsToLinks(text) {
+  // Escape HTML to prevent XSS
+  const escaped = text.replace(/&/g, '&amp;')
+                     .replace(/</g, '&lt;')
+                     .replace(/>/g, '&gt;')
+                     .replace(/"/g, '&quot;')
+                     .replace(/'/g, '&#039;');
+  
+  // Convert URLs to links
+  const urlRegex = /(https?:\/\/[^\s<]+)/g;
+  return escaped.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 }
 
 function scrollToBottom() {
