@@ -51,15 +51,26 @@ Bun.serve({
         (async () => {
           try {
             console.log("Starting stream for prompt:", text);
+            console.log("Session:", session, "Workspace:", workspace);
+            console.log("WebSocket readyState:", ws.readyState);
             
             // Send thinking indicator when starting
-            ws.send(JSON.stringify({ type: "thinking_delta" }));
+            if (ws.readyState === 1) { // 1 = OPEN
+              ws.send(JSON.stringify({ type: "thinking_delta" }));
+            }
             
             let hasStartedResponding = false;
             let lastMessageWasTool = false;
             
+            console.log("About to start streaming from Claude SDK...");
             for await (const msg of s!.stream(text)) {
               console.log("Received SDK message:", msg.type);
+              
+              // Check if WebSocket is still open
+              if (ws.readyState !== 1) {
+                console.log("WebSocket closed, stopping stream");
+                break;
+              }
               // Convert SDK messages to simplified format for client
               if (msg.type === "assistant" && msg.message.content) {
                 for (const content of msg.message.content) {
@@ -113,10 +124,12 @@ Bun.serve({
             }
           } catch (error) {
             console.error("Stream error:", error);
-            ws.send(JSON.stringify({ 
-              type: "error", 
-              message: error instanceof Error ? error.message : "Unknown error" 
-            }));
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ 
+                type: "error", 
+                message: error instanceof Error ? error.message : "Unknown error" 
+              }));
+            }
           }
         })();
       }

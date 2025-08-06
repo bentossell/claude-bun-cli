@@ -5,6 +5,7 @@ const sendBtn = document.getElementById("sendBtn");
 let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
+let thinkingMessage = null;
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -22,6 +23,11 @@ function connect() {
     
     switch(m.type) {
       case "assistant_text_delta":
+        // Remove thinking message when assistant starts responding
+        if (thinkingMessage) {
+          thinkingMessage.parentElement.remove();
+          thinkingMessage = null;
+        }
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
         }
@@ -30,7 +36,9 @@ function connect() {
         break;
         
       case "thinking_delta":
-        addMessage("Claude is thinking...", "system");
+        if (!thinkingMessage) {
+          thinkingMessage = addMessage("Claude is thinking...", "system");
+        }
         break;
         
       case "tool_call":
@@ -73,6 +81,7 @@ function sendMessage() {
   
   addMessage(text, "user");
   currentAssistantMessage = null;
+  thinkingMessage = null;
   ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
   input.focus();
 }
