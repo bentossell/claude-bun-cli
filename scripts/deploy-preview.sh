@@ -75,7 +75,7 @@ Group=claude-app
 WorkingDirectory=${PREVIEW_DIR}
 Environment="PATH=/home/claude-app/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EnvironmentFile=${PREVIEW_DIR}/.env
-ExecStart=/home/claude-app/.bun/bin/bun run src/server.ts
+ExecStart=/home/claude-app/.bun/bin/bun run /home/claude-app/previews/pr-${PR_NUMBER}/src/server.ts
 Restart=on-failure
 RestartSec=10
 
@@ -83,8 +83,9 @@ RestartSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=read-only
 ReadWritePaths=${PREVIEW_DIR}/sandbox
+ReadOnlyPaths=/home/claude-app/.bun
 
 [Install]
 WantedBy=multi-user.target
