@@ -38,6 +38,9 @@ Bun.serve({
         const { session, workspace, text } = frame;
         console.log(`Processing prompt: "${text}" for session ${session}`);
         
+        /* NEW: notify client that Claude is thinking */
+        ws.send(JSON.stringify({ type: "thinking_delta" }));
+        
         // Create workspace directory
         mkdirSync(`./sandbox/${workspace}`, { recursive: true });
         
@@ -84,6 +87,9 @@ Bun.serve({
                         result: content 
                       } 
                     }));
+
+                    /* After providing the tool result, Claude will think again before responding — notify the client */
+                    ws.send(JSON.stringify({ type: "thinking_delta" }));
                   }
                 }
               } else if (msg.type === "result") {
