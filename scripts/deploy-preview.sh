@@ -31,10 +31,17 @@ if [ -d "$PREVIEW_DIR" ]; then
     git pull origin pull/${PR_NUMBER}/head
 else
     echo "📂 Creating new preview..."
-    cd /home/claude-app/previews
-    git clone "https://github.com/${GITHUB_REPO}.git" "pr-${PR_NUMBER}"
+    mkdir -p "$PREVIEW_DIR"
     cd "$PREVIEW_DIR"
-    git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
+    # Initialize git repo and fetch only the PR branch
+    git init
+    # Use GitHub token if available
+    if [ -n "$GITHUB_TOKEN" ]; then
+        git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    else
+        git remote add origin "https://github.com/${GITHUB_REPO}.git"
+    fi
+    git fetch --depth 1 origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
     git checkout pr-${PR_NUMBER}
 fi
 
