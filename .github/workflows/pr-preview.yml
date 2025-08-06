@@ -1,0 +1,116 @@
+name: Deploy PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action != 'closed'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Generate Preview Info
+        id: preview
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PORT=$((4000 + PR_NUMBER))
+          PREVIEW_URL="https://pr-${PR_NUMBER}.preview.openode.ai"
+          
+          echo "pr_number=${PR_NUMBER}" >> $GITHUB_OUTPUT
+          echo "port=${PORT}" >> $GITHUB_OUTPUT
+          echo "url=${PREVIEW_URL}" >> $GITHUB_OUTPUT
+      
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: 164.90.137.5
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /home/claude-app/app
+            
+            # Make scripts executable if not already
+            chmod +x scripts/*.sh
+            
+            # Deploy the preview
+            ./scripts/deploy-preview.sh \
+              "${{ steps.preview.outputs.pr_number }}" \
+              "${{ github.repository }}" \
+              "${{ secrets.ANTHROPIC_API_KEY }}"
+      
+      - name: Find Comment
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Preview Deployment
+      
+      - name: Create or Update Comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 🚀 Preview Deployment
+            
+            Your preview is ready at: ${{ steps.preview.outputs.url }}
+            
+            | Status | Details |
+            |--------|---------|
+            | 🟢 **Deployed** | Successfully deployed at $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+            | 🔗 **URL** | ${{ steps.preview.outputs.url }} |
+            | 🔌 **Port** | ${{ steps.preview.outputs.port }} |
+            | 🏷️ **PR** | #${{ steps.preview.outputs.pr_number }} |
+            
+            ---
+            
+            The preview will be automatically updated when you push new commits.
+            It will be removed when this PR is closed or merged.
+          edit-mode: replace
+
+  cleanup-preview:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    
+    steps:
+      - name: Remove Preview
+        uses: appleboy/ssh-action@v0.1.10
+        with:
+          host: 164.90.137.5
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /home/claude-app/app
+            
+            # Cleanup the preview
+            ./scripts/cleanup-preview.sh "${{ github.event.pull_request.number }}"
+      
+      - name: Find Comment
+        uses: peter-evans/find-comment@v3
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: Preview Deployment
+      
+      - name: Update Comment
+        if: steps.fc.outputs.comment-id != ''
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## 🚀 Preview Deployment
+            
+            | Status | Details |
+            |--------|---------|
+            | 🔴 **Removed** | Preview was removed at $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+            | 🏷️ **PR** | #${{ github.event.pull_request.number }} |
+            
+            The preview has been cleaned up after the PR was closed.
+          edit-mode: replace
