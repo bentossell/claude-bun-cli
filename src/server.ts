@@ -51,12 +51,32 @@ Bun.serve({
         (async () => {
           try {
             console.log("Starting stream for prompt:", text);
+            console.log("Session:", session, "Workspace:", workspace);
+            console.log("WebSocket readyState:", ws.readyState);
+            
+            // Send thinking indicator when starting
+            if (ws.readyState === 1) { // 1 = OPEN
+              ws.send(JSON.stringify({ type: "thinking_delta" }));
+            }
+            
+            let hasStartedResponding = false;
+            let lastMessageWasTool = false;
+            
+            console.log("About to start streaming from Claude SDK...");
             for await (const msg of s!.stream(text)) {
               console.log("Received SDK message:", msg.type);
+              
+              // Check if WebSocket is still open
+              if (ws.readyState !== 1) {
+                console.log("WebSocket closed, stopping stream");
+                break;
+              }
               // Convert SDK messages to simplified format for client
               if (msg.type === "assistant" && msg.message.content) {
                 for (const content of msg.message.content) {
                   if (content.type === "text") {
+                    hasStartedResponding = true;
+                    lastMessageWasTool = false;
                     const message = JSON.stringify({ 
                       type: "assistant_text_delta", 
                       text: content.text 
@@ -64,6 +84,7 @@ Bun.serve({
                     console.log("Sending to client:", message);
                     ws.send(message);
                   } else if (content.type === "tool_use") {
+                    lastMessageWasTool = true;
                     ws.send(JSON.stringify({ 
                       type: "tool_call", 
                       tool: { 
@@ -84,6 +105,8 @@ Bun.serve({
                         result: content 
                       } 
                     }));
+                    // Send thinking indicator after tool completes
+                    ws.send(JSON.stringify({ type: "thinking_delta" }));
                   }
                 }
               } else if (msg.type === "result") {
@@ -101,10 +124,12 @@ Bun.serve({
             }
           } catch (error) {
             console.error("Stream error:", error);
-            ws.send(JSON.stringify({ 
-              type: "error", 
-              message: error instanceof Error ? error.message : "Unknown error" 
-            }));
+            if (ws.readyState === 1) {
+              ws.send(JSON.stringify({ 
+                type: "error", 
+                message: error instanceof Error ? error.message : "Unknown error" 
+              }));
+            }
           }
         })();
       }
