@@ -1,0 +1,30 @@
+# Add this to your /etc/caddy/Caddyfile on the server
+
+# PR Preview Routing with dynamic port mapping
+*.preview.openode.ai {
+    @preview {
+        header_regexp host Host ^pr-([0-9]+)\.preview\.openode\.ai$
+    }
+
+    handle @preview {
+        # Use map to calculate port from PR number
+        map {re.host.1} {backend_port} {
+            ~(.+) {eval: 4000 + int({re.host.1})}
+        }
+        
+        reverse_proxy localhost:{backend_port} {
+            # Handle connection errors gracefully
+            lb_try_duration 5s
+            lb_try_interval 250ms
+            
+            # Custom error handling
+            handle_errors {
+                respond "Preview server is starting up or not available. Please try again in a few moments." 503
+            }
+        }
+    }
+
+    handle {
+        respond "Preview not found. Make sure the PR number is correct." 404
+    }
+}
