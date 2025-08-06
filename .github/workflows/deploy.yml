@@ -24,15 +24,64 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
           
-          # Run deployment commands on server
-          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
-            cd /home/claude-app/app
-            git pull origin main
-            bun install
-            sudo systemctl restart claude-app
-            sudo systemctl reload caddy
-            echo "Deployment complete!"
-          EOF
+          # Create deployment script
+          cat > deploy.sh << 'DEPLOY_SCRIPT'
+          #!/bin/bash
+          TEMP_DIR="/tmp/claude-deploy-$(date +%s)"
+          APP_DIR="/home/claude-app/app"
+          
+          echo "📦 Preparing deployment..."
+          mkdir -p $TEMP_DIR
+          cd $TEMP_DIR
+          
+          # Clone the repository
+          git clone https://github.com/bentossell/claude-bun-cli.git .
+          
+          # Copy files to app directory
+          echo "🔧 Setting up application..."
+          sudo rm -rf $APP_DIR/*
+          sudo cp -r * $APP_DIR/
+          sudo cp -r .[^.]* $APP_DIR/ 2>/dev/null || true
+          
+          # Remove git directory and other unnecessary files
+          sudo rm -rf $APP_DIR/.git
+          sudo rm -rf $APP_DIR/sandbox
+          sudo rm -rf $APP_DIR/logs
+          
+          # Set ownership
+          sudo chown -R claude-app:claude-app $APP_DIR
+          
+          # Create necessary directories
+          sudo -u claude-app mkdir -p $APP_DIR/sandbox
+          sudo -u claude-app mkdir -p $APP_DIR/logs
+          
+          # Install dependencies
+          cd $APP_DIR
+          sudo -u claude-app /home/claude-app/.bun/bin/bun install
+          
+          # Preserve environment file if it exists
+          if [ -f /home/claude-app/.env.backup ]; then
+            sudo cp /home/claude-app/.env.backup $APP_DIR/.env
+            sudo chown claude-app:claude-app $APP_DIR/.env
+            sudo chmod 600 $APP_DIR/.env
+          elif [ -f $APP_DIR/.env ]; then
+            # Backup for next time
+            sudo cp $APP_DIR/.env /home/claude-app/.env.backup
+          fi
+          
+          # Clean up temp directory
+          rm -rf $TEMP_DIR
+          
+          # Restart services
+          sudo systemctl restart claude-app
+          sudo systemctl reload caddy
+          
+          echo "✅ Deployment complete!"
+          DEPLOY_SCRIPT
+          
+          # Copy and run deployment script on server
+          scp -i ~/.ssh/deploy_key deploy.sh $DEPLOY_USER@$DEPLOY_HOST:/tmp/deploy.sh
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST 'bash /tmp/deploy.sh && rm /tmp/deploy.sh'
           
       - name: Verify deployment
         env:
