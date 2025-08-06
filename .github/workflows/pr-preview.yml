@@ -37,7 +37,7 @@ jobs:
             chmod +x scripts/*.sh
             
             # Deploy the preview with GitHub token for cloning
-            export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            export GITHUB_TOKEN="${{ github.token }}"
             ./scripts/deploy-preview.sh \
               "${{ steps.preview.outputs.pr_number }}" \
               "${{ github.repository }}" \
