@@ -1,0 +1,43 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        env:
+          DEPLOY_KEY: ${{ secrets.OPENODE_DROPLET_KEY }}
+          DEPLOY_HOST: 164.90.137.5
+          DEPLOY_USER: root
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/openode-droplet-key
+          chmod 600 ~/.ssh/openode-droplet-key
+          ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+          
+          # Run deployment commands on server
+          ssh -i ~/.ssh/openode-droplet-key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+            cd /home/claude-app/app
+            git pull origin main
+            bun install
+            sudo systemctl restart claude-app
+            sudo systemctl reload caddy
+            echo "Deployment complete!"
+          EOF
+          
+      - name: Verify deployment
+        env:
+          DEPLOY_KEY: ${{ secrets.OPENODE_DROPLET_KEY }}
+          DEPLOY_HOST: 164.90.137.5
+          DEPLOY_USER: root
+        run: |
+          ssh -i ~/.ssh/openode-droplet-key $DEPLOY_USER@$DEPLOY_HOST 'sudo systemctl status claude-app'
