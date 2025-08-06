@@ -36,8 +36,8 @@ jobs:
             # Make scripts executable if not already
             chmod +x scripts/*.sh
             
-            # Deploy the preview with GitHub token for cloning
-            export GITHUB_TOKEN="${{ github.token }}"
+            # Deploy the preview with GitHub PAT for cloning private repos
+            export GITHUB_TOKEN="${{ secrets.GH_PAT }}"
             ./scripts/deploy-preview.sh \
               "${{ steps.preview.outputs.pr_number }}" \
               "${{ github.repository }}" \
