@@ -51,12 +51,21 @@ Bun.serve({
         (async () => {
           try {
             console.log("Starting stream for prompt:", text);
+            
+            // Send thinking indicator when starting
+            ws.send(JSON.stringify({ type: "thinking_delta" }));
+            
+            let hasStartedResponding = false;
+            let lastMessageWasTool = false;
+            
             for await (const msg of s!.stream(text)) {
               console.log("Received SDK message:", msg.type);
               // Convert SDK messages to simplified format for client
               if (msg.type === "assistant" && msg.message.content) {
                 for (const content of msg.message.content) {
                   if (content.type === "text") {
+                    hasStartedResponding = true;
+                    lastMessageWasTool = false;
                     const message = JSON.stringify({ 
                       type: "assistant_text_delta", 
                       text: content.text 
@@ -64,6 +73,7 @@ Bun.serve({
                     console.log("Sending to client:", message);
                     ws.send(message);
                   } else if (content.type === "tool_use") {
+                    lastMessageWasTool = true;
                     ws.send(JSON.stringify({ 
                       type: "tool_call", 
                       tool: { 
@@ -84,6 +94,8 @@ Bun.serve({
                         result: content 
                       } 
                     }));
+                    // Send thinking indicator after tool completes
+                    ws.send(JSON.stringify({ type: "thinking_delta" }));
                   }
                 }
               } else if (msg.type === "result") {
