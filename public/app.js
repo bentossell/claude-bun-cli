@@ -12,6 +12,8 @@ let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 let thinkingMessage = null;
+let thinkingStartTime = null;
+let thinkingTimerInterval = null;
 
 // Track event listeners for cleanup
 const eventListeners = new WeakMap();
@@ -43,10 +45,7 @@ function connect() {
     switch(m.type) {
       case "assistant_text_delta":
         // Remove thinking message when assistant starts responding
-        if (thinkingMessage) {
-          thinkingMessage.remove();
-          thinkingMessage = null;
-        }
+        hideThinkingIndicator();
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
         }
@@ -57,10 +56,7 @@ function connect() {
         break;
         
       case "thinking_delta":
-        if (!thinkingMessage) {
-          const messageDiv = addMessageDiv("Claude is thinking...", "system");
-          thinkingMessage = messageDiv;
-        }
+        // Don't create thinking message here - it's created after tool results
         break;
         
       case "tool_call":
@@ -70,6 +66,10 @@ function connect() {
       case "tool_result":
         const result = m.tool.result?.output ?? m.tool.result ?? null;
         addToolResult(result);
+        // Add thinking indicator after tool result
+        if (!currentAssistantMessage) {
+          showThinkingIndicator();
+        }
         break;
         
       case "assistant_text_end":
@@ -78,10 +78,7 @@ function connect() {
         
       case "done":
         // Remove any lingering thinking message
-        if (thinkingMessage) {
-          thinkingMessage.remove();
-          thinkingMessage = null;
-        }
+        hideThinkingIndicator();
         break;
     }
   });
@@ -112,9 +109,8 @@ function sendMessage() {
   addMessage(text, "user");
   currentAssistantMessage = null;
   
-  // Add thinking message immediately
-  const messageDiv = addMessageDiv("Claude is thinking...", "system");
-  thinkingMessage = messageDiv;
+  // Add thinking message immediately after user message
+  showThinkingIndicator();
   
   ws.send(JSON.stringify({ type: "prompt", session, workspace: "demo", text }));
   input.focus();
@@ -182,16 +178,25 @@ function addToolMessage(toolName, args) {
   const headerDiv = document.createElement("div");
   headerDiv.className = "tool-header";
   
-  const icon = document.createElement("svg");
-  icon.className = "tool-icon";
-  icon.innerHTML = '<path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" fill="none"/>';
-  icon.setAttribute("viewBox", "0 0 24 24");
+  // Tool icon (wrench/gear icon)
+  const toolIcon = document.createElement("svg");
+  toolIcon.className = "tool-type-icon";
+  toolIcon.innerHTML = '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="currentColor"/>';
+  toolIcon.setAttribute("viewBox", "0 0 24 24");
   
   const headerText = document.createElement("span");
-  headerText.textContent = `Using ${toolName}`;
+  headerText.className = "tool-name";
+  headerText.textContent = toolName;
   
-  headerDiv.appendChild(icon);
+  // Chevron icon for expand/collapse
+  const chevron = document.createElement("svg");
+  chevron.className = "tool-chevron";
+  chevron.innerHTML = '<path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" fill="none"/>';
+  chevron.setAttribute("viewBox", "0 0 24 24");
+  
+  headerDiv.appendChild(toolIcon);
   headerDiv.appendChild(headerText);
+  headerDiv.appendChild(chevron);
   
   // Create details section
   const detailsDiv = document.createElement("div");
@@ -207,7 +212,7 @@ function addToolMessage(toolName, args) {
   
   // Toggle expansion on click with cleanup tracking
   const toggleHandler = () => {
-    icon.classList.toggle("expanded");
+    chevron.classList.toggle("expanded");
     detailsDiv.classList.toggle("show");
   };
   contentDiv.addEventListener("click", toggleHandler);
@@ -313,6 +318,58 @@ document.addEventListener("click", (e) => {
     input.focus();
   }
 });
+
+// Thinking indicator functions
+function showThinkingIndicator() {
+  if (thinkingMessage) return;
+  
+  const messageDiv = document.createElement("div");
+  messageDiv.className = "message system thinking-indicator";
+  
+  const contentDiv = document.createElement("div");
+  contentDiv.className = "message-content";
+  
+  const thinkingText = document.createElement("span");
+  thinkingText.className = "thinking-text";
+  thinkingText.textContent = "Thinking";
+  
+  const dots = document.createElement("span");
+  dots.className = "thinking-dots";
+  dots.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+  
+  const timer = document.createElement("span");
+  timer.className = "thinking-timer";
+  timer.textContent = " (0s)";
+  
+  contentDiv.appendChild(thinkingText);
+  contentDiv.appendChild(dots);
+  contentDiv.appendChild(timer);
+  messageDiv.appendChild(contentDiv);
+  
+  chat.appendChild(messageDiv);
+  thinkingMessage = messageDiv;
+  thinkingStartTime = Date.now();
+  
+  // Update timer every 100ms for smooth display
+  thinkingTimerInterval = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - thinkingStartTime) / 100) / 10;
+    timer.textContent = ` (${elapsed.toFixed(1)}s)`;
+  }, 100);
+  
+  scrollToBottom();
+}
+
+function hideThinkingIndicator() {
+  if (thinkingMessage) {
+    thinkingMessage.remove();
+    thinkingMessage = null;
+    thinkingStartTime = null;
+  }
+  if (thinkingTimerInterval) {
+    clearInterval(thinkingTimerInterval);
+    thinkingTimerInterval = null;
+  }
+}
 
 // Cleanup function for when page is unloaded
 window.addEventListener('beforeunload', () => {
