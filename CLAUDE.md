@@ -132,6 +132,14 @@ ssh -i ~/.ssh/openode-droplet-key root@164.90.137.5 'sudo journalctl -u claude-a
 - Process status: `systemctl status claude-app`
 - Port usage: `lsof -i :3000`
 
+## Caddy Configuration
+
+The production server uses Caddy as a reverse proxy with the following setup:
+- Static files (HTML/JS) are served directly by Caddy from `/home/claude-app/app/public/`
+- WebSocket connections to `/chat` are proxied to the Bun server on port 3000
+- **Important**: The `caddy` user must be in the `claude-app` group to access static files
+- This is configured automatically by `setup-non-root.sh`
+
 ## Important Notes
 
 - The app intentionally uses `bypassPermissions` because the SDK's `query()` function runs in non-interactive mode and would hang waiting for permission prompts that can never be answered

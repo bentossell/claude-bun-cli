@@ -53,12 +53,16 @@ RestartSec=10
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+ProtectHome=no
 ReadWritePaths=/home/claude-app/app/sandbox /home/claude-app/app/logs
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Add caddy user to claude-app group for file access
+echo "Adding caddy user to claude-app group..."
+sudo usermod -a -G claude-app caddy
 
 # Reload systemd
 sudo systemctl daemon-reload
