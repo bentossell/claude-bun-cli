@@ -47,7 +47,7 @@ fi
 
 # Install dependencies
 echo "📦 Installing dependencies..."
-bun install
+/home/claude-app/.bun/bin/bun install
 
 # Create .env file for the preview
 cat > .env << EOF
