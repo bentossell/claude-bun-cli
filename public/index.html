@@ -27,12 +27,39 @@ body {
   border-bottom: 1px solid #e5e7eb;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
   flex-shrink: 0; /* Prevent header from shrinking */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .header h1 {
   font-size: 1.25rem;
   font-weight: 600;
   color: #111827;
+}
+
+.connection-status {
+  font-size: 0.875rem;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.connection-status::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.connection-status.connected::before {
+  background: #10b981;
+}
+
+.connection-status.connected {
+  color: #10b981;
 }
 
 .chat-container {
@@ -96,12 +123,54 @@ body {
   text-align: center;
 }
 
+.message.tool {
+  max-width: 100%;
+  width: 100%;
+}
+
 .message.tool .message-content {
   background: #fef3c7;
   color: #92400e;
   font-size: 0.875rem;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
   border: 1px solid #fcd34d;
+  max-width: 100%;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.message.tool .message-content:hover {
+  background: #fde68a;
+}
+
+.tool-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tool-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.tool-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.tool-details {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #fbbf24;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: none;
+}
+
+.tool-details.show {
+  display: block;
 }
 
 .input-container {
@@ -226,6 +295,7 @@ body {
 <body>
 <div class="header">
   <h1>Claude Code via CLI</h1>
+  <span id="connection-status" class="connection-status"></span>
 </div>
 <div class="chat-container" id="chat"></div>
 <div class="input-container">

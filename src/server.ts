@@ -102,7 +102,7 @@ Bun.serve({
                       type: "tool_result", 
                       tool: { 
                         name: content.tool_use_id,
-                        result: content 
+                        result: content.content || content.output || ""
                       } 
                     }));
                     // Send thinking indicator after tool completes
