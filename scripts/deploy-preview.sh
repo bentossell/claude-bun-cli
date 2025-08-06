@@ -26,6 +26,10 @@ mkdir -p /home/claude-app/previews
 if [ -d "$PREVIEW_DIR" ]; then
     echo "📂 Updating existing preview..."
     cd "$PREVIEW_DIR"
+    # Check if we need to update the remote URL with token
+    if [ -n "$GITHUB_TOKEN" ]; then
+        git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git"
+    fi
     git fetch origin pull/${PR_NUMBER}/head:pr-${PR_NUMBER}
     git checkout pr-${PR_NUMBER}
     git pull origin pull/${PR_NUMBER}/head
