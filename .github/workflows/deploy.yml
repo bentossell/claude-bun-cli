@@ -14,18 +14,18 @@ jobs:
 
       - name: Deploy to server
         env:
-          DEPLOY_KEY: ${{ secrets.OPENODE_DROPLET_KEY }}
+          DEPLOY_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           DEPLOY_HOST: 164.90.137.5
           DEPLOY_USER: root
         run: |
           # Setup SSH
           mkdir -p ~/.ssh
-          echo "$DEPLOY_KEY" > ~/.ssh/openode-droplet-key
-          chmod 600 ~/.ssh/openode-droplet-key
+          echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H $DEPLOY_HOST >> ~/.ssh/known_hosts
           
           # Run deployment commands on server
-          ssh -i ~/.ssh/openode-droplet-key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
             cd /home/claude-app/app
             git pull origin main
             bun install
@@ -36,8 +36,8 @@ jobs:
           
       - name: Verify deployment
         env:
-          DEPLOY_KEY: ${{ secrets.OPENODE_DROPLET_KEY }}
+          DEPLOY_KEY: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           DEPLOY_HOST: 164.90.137.5
           DEPLOY_USER: root
         run: |
-          ssh -i ~/.ssh/openode-droplet-key $DEPLOY_USER@$DEPLOY_HOST 'sudo systemctl status claude-app'
+          ssh -i ~/.ssh/deploy_key $DEPLOY_USER@$DEPLOY_HOST 'sudo systemctl status claude-app'
