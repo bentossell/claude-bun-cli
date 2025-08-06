@@ -29,7 +29,7 @@ jobs:
         with:
           host: 164.90.137.5
           username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           script: |
             cd /home/claude-app/app
             
@@ -83,7 +83,7 @@ jobs:
         with:
           host: 164.90.137.5
           username: root
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          key: ${{ secrets.DO_SSH_PRIVATE_KEY }}
           script: |
             cd /home/claude-app/app
             
