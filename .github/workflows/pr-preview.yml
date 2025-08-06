@@ -37,8 +37,7 @@ jobs:
             chmod +x scripts/*.sh
             
             # Deploy the preview with GitHub PAT for cloning private repos
-            export GITHUB_TOKEN="${{ secrets.GH_PAT }}"
-            ./scripts/deploy-preview.sh \
+            GITHUB_TOKEN="${{ secrets.GH_PAT }}" ./scripts/deploy-preview.sh \
               "${{ steps.preview.outputs.pr_number }}" \
               "${{ github.repository }}" \
               "${{ secrets.ANTHROPIC_API_KEY }}"
