@@ -1,3 +1,8 @@
+// Constants
+const MAX_RESULT_LENGTH = 500;
+const RECONNECT_DELAY = 1000;
+const WEBSOCKET_OPEN = 1;
+
 const chat = document.getElementById("chat");
 const input = document.getElementById("msg");
 const sendBtn = document.getElementById("sendBtn");
@@ -7,6 +12,9 @@ let ws;
 const session = crypto.randomUUID();
 let currentAssistantMessage = null;
 let thinkingMessage = null;
+
+// Track event listeners for cleanup
+const eventListeners = new WeakMap();
 
 function updateConnectionStatus(connected) {
   if (connected) {
@@ -42,7 +50,9 @@ function connect() {
         if (!currentAssistantMessage) {
           currentAssistantMessage = addMessage("", "assistant");
         }
-        currentAssistantMessage.innerHTML += parseMarkdown(m.text);
+        // Build content safely and append
+        const sanitizedContent = parseMarkdown(m.text);
+        currentAssistantMessage.innerHTML += sanitizedContent;
         scrollToBottom();
         break;
         
@@ -58,7 +68,7 @@ function connect() {
         break;
         
       case "tool_result":
-        const result = m.tool.result?.output || m.tool.result;
+        const result = m.tool.result?.output ?? m.tool.result ?? null;
         addToolResult(result);
         break;
         
@@ -84,7 +94,7 @@ function connect() {
 
   ws.addEventListener("error", (e) => {
     updateConnectionStatus(false);
-    setTimeout(connect, 1000);
+    setTimeout(connect, RECONNECT_DELAY);
   });
 }
 
@@ -94,8 +104,8 @@ function sendMessage() {
   
   if (!text) return;
   
-  if (ws.readyState !== WebSocket.OPEN) {
-    addMessage("Not connected. Please wait...", "system");
+  if (ws.readyState !== WEBSOCKET_OPEN) {
+    addMessage("Connection lost. Reconnecting...", "system");
     return;
   }
   
@@ -120,10 +130,17 @@ input.addEventListener("keydown", e => {
 sendBtn.addEventListener("click", sendMessage);
 
 function parseMarkdown(text) {
-  // Simple markdown parsing for bold text
+  // Simple markdown parsing for bold text with basic escaping
+  if (typeof text !== 'string') return String(text);
+  
   return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Escape HTML first
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    // Then apply markdown
+    .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '<em>$1</em>');
 }
 
 function addMessage(text, type) {
@@ -139,7 +156,9 @@ function addMessageDiv(text, type) {
   contentDiv.className = "message-content";
   
   if (type === "assistant") {
-    contentDiv.innerHTML = parseMarkdown(text);
+    // Build content safely to avoid XSS
+    const sanitizedContent = parseMarkdown(text);
+    contentDiv.innerHTML = sanitizedContent;
   } else {
     contentDiv.textContent = text;
   }
@@ -178,73 +197,104 @@ function addToolMessage(toolName, args) {
   const detailsDiv = document.createElement("div");
   detailsDiv.className = "tool-details";
   
-  // Format args based on tool name
-  let detailsText = "";
-  if (typeof args === "object" && args !== null) {
-    if (toolName === "Edit" || toolName === "Write") {
-      detailsText = args.file_path || JSON.stringify(args, null, 2);
-    } else if (toolName === "Bash") {
-      detailsText = args.command || JSON.stringify(args, null, 2);
-    } else {
-      detailsText = JSON.stringify(args, null, 2);
-    }
-  } else {
-    detailsText = String(args);
-  }
+  // Format args using extracted function
+  const detailsText = formatToolArgs(toolName, args);
   
   detailsDiv.textContent = detailsText;
   
   contentDiv.appendChild(headerDiv);
   contentDiv.appendChild(detailsDiv);
   
-  // Toggle expansion on click
-  contentDiv.addEventListener("click", () => {
+  // Toggle expansion on click with cleanup tracking
+  const toggleHandler = () => {
     icon.classList.toggle("expanded");
     detailsDiv.classList.toggle("show");
-  });
+  };
+  contentDiv.addEventListener("click", toggleHandler);
+  
+  // Store handler for cleanup
+  eventListeners.set(contentDiv, { type: 'click', handler: toggleHandler });
   
   messageDiv.appendChild(contentDiv);
   chat.appendChild(messageDiv);
   
-  // Store for result pairing
+  // Store for result pairing using our tracking set
   messageDiv.dataset.toolCall = "pending";
+  pendingToolCalls.add(messageDiv);
   
   scrollToBottom();
 }
 
+// Track pending tool calls to avoid DOM queries
+const pendingToolCalls = new Set();
+
 function addToolResult(result) {
-  // Find the last pending tool call
-  const pendingToolCalls = chat.querySelectorAll('[data-tool-call="pending"]');
-  const lastPendingCall = pendingToolCalls[pendingToolCalls.length - 1];
+  // Get the last pending call from our tracked set
+  const pendingArray = Array.from(pendingToolCalls);
+  const lastPendingCall = pendingArray[pendingArray.length - 1];
   
-  if (lastPendingCall) {
+  if (lastPendingCall && lastPendingCall.isConnected) {
     lastPendingCall.dataset.toolCall = "complete";
+    pendingToolCalls.delete(lastPendingCall);
+    
     const detailsDiv = lastPendingCall.querySelector('.tool-details');
     if (detailsDiv) {
-      // Format result based on type
-      let formattedResult = "";
-      if (result === undefined || result === null) {
-        formattedResult = "\n\nResult: (empty)";
-      } else if (typeof result === "string") {
-        formattedResult = "\n\nResult:\n" + truncate(result);
-      } else {
-        formattedResult = "\n\nResult:\n" + truncate(JSON.stringify(result, null, 2));
-      }
+      const formattedResult = formatToolResult(result);
       detailsDiv.textContent += formattedResult;
     }
   }
 }
 
 function scrollToBottom() {
-  chat.scrollTop = chat.scrollHeight;
+  throttledScrollToBottom();
 }
 
 const truncate = s => {
-  if (typeof s === "string" && s.length > 500) {
-    return s.slice(0, 500) + "…";
+  if (typeof s === "string" && s.length > MAX_RESULT_LENGTH) {
+    return s.slice(0, MAX_RESULT_LENGTH) + "…";
   }
   return s || "";
 };
+
+// Helper function to format tool arguments
+function formatToolArgs(toolName, args) {
+  if (typeof args !== "object" || args == null) {
+    return String(args);
+  }
+  
+  const formatters = {
+    Edit: (args) => args.file_path || JSON.stringify(args, null, 2),
+    Write: (args) => args.file_path || JSON.stringify(args, null, 2),
+    Bash: (args) => args.command || JSON.stringify(args, null, 2)
+  };
+  
+  const formatter = formatters[toolName];
+  return formatter ? formatter(args) : JSON.stringify(args, null, 2);
+}
+
+// Helper function to format tool results
+function formatToolResult(result) {
+  if (result == null) {
+    return "\n\nResult: (empty)";
+  }
+  
+  if (typeof result === "string") {
+    return "\n\nResult:\n" + truncate(result);
+  }
+  
+  return "\n\nResult:\n" + truncate(JSON.stringify(result, null, 2));
+}
+
+// Throttled scroll function for better performance
+let scrollTimeout;
+function throttledScrollToBottom() {
+  if (scrollTimeout) return;
+  
+  scrollTimeout = requestAnimationFrame(() => {
+    chat.scrollTop = chat.scrollHeight;
+    scrollTimeout = null;
+  });
+}
 
 // Start connection
 input.disabled = true;
@@ -261,5 +311,24 @@ window.addEventListener("load", () => {
 document.addEventListener("click", (e) => {
   if (!e.target.closest("a, button:not(#sendBtn), .message.tool")) {
     input.focus();
+  }
+});
+
+// Cleanup function for when page is unloaded
+window.addEventListener('beforeunload', () => {
+  // Clean up pending tool calls
+  pendingToolCalls.clear();
+  
+  // Clean up event listeners
+  for (const [element, listenerInfo] of eventListeners) {
+    if (element.isConnected) {
+      element.removeEventListener(listenerInfo.type, listenerInfo.handler);
+    }
+  }
+  eventListeners.clear();
+  
+  // Close WebSocket
+  if (ws && ws.readyState === WEBSOCKET_OPEN) {
+    ws.close();
   }
 });
