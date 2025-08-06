@@ -8,7 +8,7 @@ type ClientFrame =
 const sessions = new Map<string, ClaudeSDKSession>();
 
 Bun.serve({
-  port: 3000,
+  port: parseInt(process.env.PORT || "3000"),
   async fetch(req, server) {
     const url = new URL(req.url);
     
@@ -119,4 +119,4 @@ Bun.serve({
   }
 });
 
-console.log("🚀 http://localhost:3000");
+console.log(`🚀 http://localhost:${process.env.PORT || 3000}`);
