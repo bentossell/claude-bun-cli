@@ -64,6 +64,8 @@ function connect() {
         break;
         
       case "tool_call":
+        // Reset current assistant message so next text starts fresh
+        currentAssistantMessage = null;
         addToolMessage(m.tool.name, m.tool.args);
         break;
         
