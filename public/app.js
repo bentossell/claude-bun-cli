@@ -39,6 +39,7 @@ function connect() {
 
   ws.addEventListener("message", e => {
     const m = JSON.parse(e.data);
+    console.log("Received WebSocket message:", m.type, m);
     
     switch(m.type) {
       case "assistant_text_delta":
@@ -64,6 +65,8 @@ function connect() {
         break;
         
       case "tool_call":
+        // Reset current assistant message so next text starts fresh
+        currentAssistantMessage = null;
         addToolMessage(m.tool.name, m.tool.args);
         break;
         
@@ -82,6 +85,7 @@ function connect() {
           thinkingMessage.remove();
           thinkingMessage = null;
         }
+        currentAssistantMessage = null;
         break;
     }
   });
