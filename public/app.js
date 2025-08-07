@@ -39,6 +39,7 @@ function connect() {
 
   ws.addEventListener("message", e => {
     const m = JSON.parse(e.data);
+    console.log("Received WebSocket message:", m.type, m);
     
     switch(m.type) {
       case "assistant_text_delta":
@@ -84,6 +85,7 @@ function connect() {
           thinkingMessage.remove();
           thinkingMessage = null;
         }
+        currentAssistantMessage = null;
         break;
     }
   });
